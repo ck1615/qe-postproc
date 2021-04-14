@@ -11,7 +11,7 @@ from ase.units import Bohr, Hartree
 import numpy as np
 from numpy.linalg import inv
 
-class AtomicStructure:
+class XML_Data:
 
     def __init__(self, xmlname):
 
@@ -23,6 +23,8 @@ class AtomicStructure:
         self.ntyp = None
         self.nat = None
         self.ibrav = None
+        self.alat = None
+        self.nbnd = None
 
         #Structural parameters (unit cell, atomic positions)
         self.cell = []
@@ -32,6 +34,12 @@ class AtomicStructure:
         #Keywords
         self.keywords = {}
         self.xc = None
+
+        #K-points, KS energy eigenvalues
+        self.k_points = {}
+
+        #Get data
+        self.get_xml_data()
 
 
     def get_positions(self):
@@ -60,6 +68,12 @@ class AtomicStructure:
         #Convert to a numpy array
         self.cell = np.array(self.cell)
         self.reciprocal_cell = (2*np.pi) * np.transpose(inv(self.cell))
+        self.recip_cell_xml = []
+        for r in self.xmltree.findall\
+                ("./output/basis_set/reciprocal_lattice/*"):
+            self.recip_cell_xml.append([float(component) for component
+                in r.text.split()])
+        self.recip_cell_xml = np.array(self.recip_cell_xml)
 
 
     def get_scaled_positions(self):
@@ -97,13 +111,15 @@ class AtomicStructure:
 
         """
         #ntyp
-        self.ntyp = self.xmltree.find('./output/atomic_species').\
-                attrib['ntyp']
+        self.ntyp = int(self.xmltree.find('./output/atomic_species').\
+                attrib['ntyp'])
         #nat & ibrav
-        self.nat = self.xmltree.find('./output/atomic_structure').\
-                attrib['nat']
-        self.ibrav = self.xmltree.find('./output/atomic_structure').\
-                attrib['bravais_index']
+        self.nat = int(self.xmltree.find('./output/atomic_structure').\
+                attrib['nat'])
+        self.ibrav = int(self.xmltree.find('./output/atomic_structure').\
+                attrib['bravais_index'])
+        self.alat = float(self.xmltree.find('./output/atomic_structure').\
+                attrib['alat']) * Bohr
 
 
     def get_xc_functional(self):
@@ -122,6 +138,7 @@ class AtomicStructure:
 
         self.bands_keywords = {r.tag: r.text for r in self.xmltree.findall(\
                 './input/bands/*')}
+        self.nbnd = int(self.bands_keywords['nbnd'])
 
 
     def get_magnetisation_data(self):
@@ -143,6 +160,7 @@ class AtomicStructure:
         self.total_energies = {r.tag: float(r.text)*Hartree for r in self.\
                 xmltree.findall('./output/total_energy/*')}
 
+
     def get_band_structure_keywords(self):
         """
         Get data relating to the band_structure tag up until k-points are given
@@ -153,6 +171,7 @@ class AtomicStructure:
                 break
             else:
                 self.bs_keywords[r.tag] = r.text
+
 
     def compute_band_gap(self):
         """
@@ -176,34 +195,107 @@ class AtomicStructure:
                 KeyError("lowestUnoccupiedLevel not present since not enough"+\
                         " bands were used. Cannot compute band gap.")
 
+
     def get_kpoint_eigenvalues(self):
         """
         Get all the k-point eigenvalues as a dictionary or list of two dic-
         -tionary if lsda = true (spin-polarised calculation).
 
-            kp_eigvals[(k1, k2, k3)] = [e1, e2, ..., eN]
+        self.k_points = {'crystal': [list of k-points in reciprocal cell
+        coordinates], 'cartesian': [list of k-points in units of 1/Å]}
+
+        In the .xml file, the k-points are giving in units of 2π/alat. This is
+        converted by multiplication by 2π / alat.
+
+        Let k_cryst and k_cart be the crystal coordinates and cartesian (1/a)
+        k-point components. Let L and L* be the unit cell matrix (rows are
+        lattice vectors) and the reciprocal cell matrix.
+
+        L* = 2π*transpose(inv(L))
+
+        We have: k_cryst * (L*) = k_cart [rows]
+        Hence by inversion: k_cryst = k_cart * inv(L*)
+                                    = k_cart * inv(2π*transpose(inv(L)))
+                                    = k_cart * (1/2π) * transpose(L)
+
+
+        Eigenvalues and occupations are shaped as (# k-points, 2*#bands)
+        for spin-polarised case, but as (# k-points, #bands) in spin-un-
+        -polarised case. 
+
+        Hence I reshape it in the spin-polarised case as (2,len(kpts), nbnd)
         """
 
-        #Create list of tuple of k-points
-        k_points = [tuple([float(kval) for kval in r.text.split()]) for r\
-                in self.xmltree.findall('./output/band_structure/ks_energies/k_point')]
-        eigvals = [[float(eig) for eig in r.text.split()] for r in self.xmltree.\
-                findall('./output/band_structure/ks_energies/eigenvalues')]
-        occupations = [[float(occ) for occ in r.text.split()] for r in self.\
-                xmltree.findall('./output/band_structure/ks_energies/occupations')]
-        assert len(k_points) == len(eigvals) == len(occupations), "The " + \
-                "number of k-points doesn't match number of lists of KS " + \
-                "eigenvalues or occupancies."
+        #Get cartesian k-points used to sample the Brillouin Zone (either scf,
+        #vc-relax or bands calculation) and convert into 1/Å from 2π/alat
+        self.k_points['cartesian'] = np.array([[float(kval) for kval in \
+                r.text.split()] for r in self.xmltree.findall(\
+                './output/band_structure/ks_energies/k_point')]) * \
+                2*np.pi / self.alat
+        #Use unit cell to get crystal coordinates k-points 
+        self.k_points['crystal'] = np.matmul(self.k_points['cartesian'],\
+                (1/(2*np.pi)) * np.transpose(self.cell))
+
+        self.eigvals = np.array([[float(eig) for eig in r.text.split()] for r \
+                in self.xmltree.findall\
+                ('./output/band_structure/ks_energies/eigenvalues')]) * \
+                Hartree
+
+        self.occupations = np.array([[float(occ) for occ in r.text.split()] \
+                for r in self.xmltree.findall\
+                ('./output/band_structure/ks_energies/occupations')])
+        assert len(self.k_points['cartesian']) == len(self.eigvals) == \
+                len(self.occupations), "The number of k-points doesn't match the "+\
+                "number of lists of KS eigenvalues or occupancies."
+
+        #Shape of eigenvalues
+        eval_shape = self.eigvals.shape
+        target_shape = (2, eval_shape[0], int(eval_shape[1]/2))
 
         #Treat spin polarised case
-        self.kpt_eigvals = []
         if self.bs_keywords['lsda'] == 'true':
-            self.kpt_eigvals = [{},{}]
-            nbnd = int(self.bands_keywords['nbnd'])
-            for i, kpt in enumerate(k_points):
-                self.kpt_eigvals[0][kpt] = eigvals[i][:nbnd]
-                self.kpt_eigvals[1][kpt] = eigvals[i][nbnd:]
-                assert eigvals[i] == self.kpt_eigvals[0][kpt]+ self.kpt_eigvals[1][kpt]
+            self.eigvals = self.eigvals.reshape(target_shape)
+            self.occupations = self.occupations.reshape(target_shape)
+
+
+    def get_fermi_energy(self):
+        """
+        This function extracts the Fermi energy / energies
+        """
+        #Get Fermi energy or Fermi energies
+        #Spin-polarised
+        if self.bs_keywords['lsda'] == 'true':
+            fermi_kw = 'two_fermi_energies'
+        else:
+            fermi_kw = 'fermi_energy'
+        self.fermi_energy = [float(ef) * Hartree for ef in self.\
+                    bs_keywords[fermi_kw].split()]
+
+
+
+    def get_xml_data(self):
+        """
+        Get all data
+        """
+
+        #Structural data
+        self.get_positions()
+        self.get_cell()
+        self.get_scaled_positions()
+
+        #Keywords and calculation parameters
+        self.get_control_variables()
+        self.get_system_variables()
+        self.get_xc_functional()
+        self.get_bands_keywords()
+        self.get_magnetisation_data()
+        self.get_band_structure_keywords()
+
+        #Get KS eigenvalues
+        self.get_kpoint_eigenvalues()
+        self.get_fermi_energy()
+
+
 
 
 
