@@ -309,7 +309,11 @@ class XML_Data:
         self.eigvals[0] -= self.fermi_energy[0]
         self.eigvals[1] -= self.fermi_energy[1]
 
+
     def band_structure(self, figsize=(6,6), energy_window=40):
+        """
+        Instantiates the BandStructure inner class with optional arguments.
+        """
         return self.BandStructure(self, figsize=figsize, energy_window=\
                 energy_window)
 
@@ -483,25 +487,6 @@ class XML_Data:
             #fig.savefig(self.xml_data.replace('xml', 'pdf'))
 
             return None
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
