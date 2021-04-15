@@ -9,15 +9,20 @@ from glob import glob
 from misctools import strindex
 from ase.units import Bohr, Hartree
 import numpy as np
-from numpy.linalg import inv
+from numpy.linalg import inv, norm
+from matplotlib import pyplot as plt
+from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
 
 class XML_Data:
 
-    def __init__(self, xmlname):
+    def __init__(self, xmlname, units='ase'):
 
         #Initialise file
         self.xmlname = xmlname
         self.xmltree = ET.parse(self.xmlname)
+
+        #Units (ase: Å, eV, Pa, Hartree: Hartree, Bohr, ...)
+        self.units = units
 
         #Important keywords as attributes (ntyp, nat, ibrav)
         self.ntyp = None
@@ -40,6 +45,29 @@ class XML_Data:
 
         #Get data
         self.get_xml_data()
+
+
+    def get_xml_data(self):
+        """
+        Get all data
+        """
+
+        #Structural data
+        self.get_positions()
+        self.get_cell()
+        self.get_scaled_positions()
+
+        #Keywords and calculation parameters
+        self.get_control_variables()
+        self.get_system_variables()
+        self.get_xc_functional()
+        self.get_bands_keywords()
+        self.get_magnetisation_data()
+        self.get_band_structure_keywords()
+
+        #Get KS eigenvalues
+        self.get_kpoint_eigenvalues()
+        self.get_fermi_energy()
 
 
     def get_positions(self):
@@ -221,10 +249,18 @@ class XML_Data:
 
         Eigenvalues and occupations are shaped as (# k-points, 2*#bands)
         for spin-polarised case, but as (# k-points, #bands) in spin-un-
-        -polarised case. 
+        -polarised case.
 
         Hence I reshape it in the spin-polarised case as (2,len(kpts), nbnd)
         """
+
+        #Unit conversion
+        if self.units == 'Hartree':
+            conv = 1
+        elif self.units == 'ase':
+            conv = Hartree
+        else:
+            conv = 1
 
         #Get cartesian k-points used to sample the Brillouin Zone (either scf,
         #vc-relax or bands calculation) and convert into 1/Å from 2π/alat
@@ -238,8 +274,7 @@ class XML_Data:
 
         self.eigvals = np.array([[float(eig) for eig in r.text.split()] for r \
                 in self.xmltree.findall\
-                ('./output/band_structure/ks_energies/eigenvalues')]) * \
-                Hartree
+                ('./output/band_structure/ks_energies/eigenvalues')]) * conv
 
         self.occupations = np.array([[float(occ) for occ in r.text.split()] \
                 for r in self.xmltree.findall\
@@ -248,12 +283,12 @@ class XML_Data:
                 len(self.occupations), "The number of k-points doesn't match the "+\
                 "number of lists of KS eigenvalues or occupancies."
 
-        #Shape of eigenvalues
-        eval_shape = self.eigvals.shape
-        target_shape = (2, eval_shape[0], int(eval_shape[1]/2))
-
         #Treat spin polarised case
         if self.bs_keywords['lsda'] == 'true':
+            #Shape of eigenvalues
+            eval_shape = self.eigvals.shape
+            target_shape = (2, eval_shape[0], int(eval_shape[1]/2))
+            #Reshape eigenvalues
             self.eigvals = self.eigvals.reshape(target_shape)
             self.occupations = self.occupations.reshape(target_shape)
 
@@ -262,38 +297,193 @@ class XML_Data:
         """
         This function extracts the Fermi energy / energies
         """
-        #Get Fermi energy or Fermi energies
-        #Spin-polarised
+        #Get Fermi energy keyword depending on spin polarisation
         if self.bs_keywords['lsda'] == 'true':
             fermi_kw = 'two_fermi_energies'
         else:
             fermi_kw = 'fermi_energy'
+        #Get Fermi energy(ies)
         self.fermi_energy = [float(ef) * Hartree for ef in self.\
                     bs_keywords[fermi_kw].split()]
 
+        self.eigvals[0] -= self.fermi_energy[0]
+        self.eigvals[1] -= self.fermi_energy[1]
+
+    def band_structure(self, figsize=(6,6), energy_window=40):
+        return self.BandStructure(self, figsize=figsize, energy_window=\
+                energy_window)
 
 
-    def get_xml_data(self):
+    class BandStructure:
         """
-        Get all data
+        This class contains all the methods and attributes for a band structure
+        plot
         """
 
-        #Structural data
-        self.get_positions()
-        self.get_cell()
-        self.get_scaled_positions()
+        def __init__(self, xml_data, figsize=(6,6), energy_window=10):
 
-        #Keywords and calculation parameters
-        self.get_control_variables()
-        self.get_system_variables()
-        self.get_xc_functional()
-        self.get_bands_keywords()
-        self.get_magnetisation_data()
-        self.get_band_structure_keywords()
+            #self.tolerance:
+            self.tol = 1e-10
+            #Instantiate outer class XML_Data in the inner class 
+            self.xml_data = xml_data
+            self.bands_inputfile = self.xml_data.xmlname.replace('xml',\
+                    'bands.in')
 
-        #Get KS eigenvalues
-        self.get_kpoint_eigenvalues()
-        self.get_fermi_energy()
+            #Plot characteristics
+            self.figsize = figsize
+            self.spin_up_colour = 'b--'
+            self.spin_down_colour = 'r'
+            self.xlim = (0,1)
+            self.xlabel = 'Wavevectors'
+            self.ylabel = r'$E - E_{\mathrm{Fermi}}$ / eV'
+            self.y_majorticks = 1
+            self.y_minorticks = 0.5
+            self.y_major_tick_formatter = '{x:.0f}'
+            self.energy_window = energy_window
+
+            #Bands and path related variables
+            self.kpath_idx = []   #Indices from 0.0 to 1.0 of k-points
+            self.path = None
+            self.path_ticks = None
+            self.labels = []
+
+
+        def get_highsym_data(self):
+            """
+            Gets all data relative to the high-symmetry points in the Brillouin
+            zone required to perform the plot.
+            """
+            self.get_kpath_indices()
+            self.get_highsym_kpoints()
+            self.get_highsym_ticks()
+            self.get_highsym_points_labels()
+            return None
+
+
+        def get_kpath_indices(self):
+            """
+            This function takes a set of k-points and associates to it a list of
+            non-negative real numbers corresponding to the distance from the
+            initial k-point on the path.
+            """
+            path = []
+            for i, kpt in enumerate(self.xml_data.k_points['cartesian']):
+                if i == 0:
+                    path.append(0.0)
+                else:
+                    path.append(path[i-1] + norm(kpt - \
+                            self.xml_data.k_points['cartesian'][i-1]))
+
+            #Normalise list between 0.0 and 1.0
+            self.kpath_idx = [(idx - path[0]) / (path[-1] - path[0]) for idx \
+                    in path]
+
+
+        def get_highsym_kpoints(self):
+            """
+            Gets the high-symmetry points used to perform the band structure
+            calculation
+            """
+            #Open bands input file
+            with open(self.bands_inputfile, 'r+') as f:
+                self.input_lines = f.readlines()
+
+            #Get start and end indices
+            start_idx = strindex(self.input_lines, "K_POINTS crystal")
+            end_idx = strindex(self.input_lines, "ATOMIC_POSITIONS")
+
+            #Extract path in crystal coordinates
+            self.path = np.array([[float(l) for l in line.split()[:-1]] for \
+                    line in self.input_lines[start_idx + 2:end_idx] if \
+                    line.split() != [] ])
+
+
+        def get_highsym_ticks(self):
+            """
+            This function gets the locations of the high-symmetry points along
+            the x-axis of the plot.
+            """
+
+            #Define high-symmetry point ticks: 
+            self.path_ticks = np.zeros(len(self.path))
+
+            #Ensure first and last high-symmetry point correspond with start
+            #and end of k-point list
+            assert norm(self.path[0] - self.xml_data.k_points['crystal'][0]) <\
+            self.tol and norm(self.path[-1] - self.xml_data.k_points['crystal']\
+                    [-1]) < self.tol, "Initial and final are not what is expected"
+
+            #Set the values of the first and last ticks
+            self.path_ticks[0] = 0.0
+            self.path_ticks[-1] = 1.0
+
+            #Initial k-point index
+            kpt_idx = 1
+            #Iterate over non-extremal high-symmetry points
+            for ip, p in enumerate(self.path[1:-1]):
+                #Iterate over k-points
+                for ik, k in enumerate(self.xml_data.k_points['crystal']):
+                    #Only consider k-points above index
+                    if ik < kpt_idx:
+                        continue
+                    if norm(k-p) < self.tol:
+                        kpt_idx = ik + 1 #Start at next k-point after match
+                        self.path_ticks[ip + 1] = self.kpath_idx[ik]
+                        break
+
+
+        def get_highsym_points_labels(self):
+            """
+            This function returns the labels used when plotting the band struc-
+            -ture.
+            """
+            for ip, p in enumerate(self.path):
+                #Gamma point
+                if norm(p) < self.tol:
+                    self.labels.append(r"\Gamma")
+                else:
+                    self.labels.append(tuple(p))
+
+
+        def plot_band_structure(self):
+            """
+            This function plots the band structure
+            """
+            fig, ax = plt.subplots(figsize=self.figsize)
+            #Spin polarised case
+            if self.xml_data.bs_keywords['lsda'] == 'true':
+                ax.plot(self.kpath_idx, self.xml_data.eigvals[0], self.\
+                        spin_up_colour, label='Spin up', linewidth=1.0)
+                ax.plot(self.kpath_idx, np.flip(self.xml_data.eigvals[1],\
+                        axis=0), self.spin_down_colour, label='Spin down',\
+                        linewidth=1.0)
+            else:
+                ax.plot(self.kpath_idx, self.xml_data.eigvals, self.\
+                        spin_up_colour)
+
+            #Set energy (y) axis quantities
+            ylim = (-self.energy_window / 2, self.energy_window / 2)
+            ax.set_ylim(ylim)
+            ax.yaxis.set_major_locator(MultipleLocator( self.y_majorticks ))
+            ax.yaxis.set_major_formatter(self.y_major_tick_formatter)
+            ax.yaxis.set_minor_locator(MultipleLocator( self.y_minorticks ))
+            ax.set_ylabel( self.ylabel )
+
+            #Set high-symmetry point quantities
+            ax.set_xlim((0.0,1.0))
+            ax.set_xticks(self.path_ticks)
+            ax.set_xticklabels(self.labels, rotation=45, fontsize=10)
+
+            #Plot vertical lines at each high-symmetry point
+            for i, t in enumerate(self.path_ticks):
+                ax.axvline(x=t, c='k', linewidth=1)
+
+            #Save figure
+            fig.tight_layout()
+            #fig.savefig(self.xml_data.replace('xml', 'pdf'))
+
+            return None
+
 
 
 
