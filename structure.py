@@ -51,7 +51,6 @@ class XML_Data:
         """
         Get all data
         """
-
         #Structural data
         self.get_positions()
         self.get_cell()
@@ -67,13 +66,12 @@ class XML_Data:
 
         #Get KS eigenvalues
         self.get_kpoint_eigenvalues()
-        self.get_fermi_energy()
 
 
     def get_positions(self):
         """
         Get indexed element symbols and their absolute positions in Cartesian
-        coordinates. 
+        coordinates.
         self.positions[(element, index)] = [x,y,z]
         """
         for r in self.xmltree.findall\
@@ -264,10 +262,10 @@ class XML_Data:
 
         #Get cartesian k-points used to sample the Brillouin Zone (either scf,
         #vc-relax or bands calculation) and convert into 1/Å from 2π/alat
-        self.k_points['cartesian'] = np.array([[float(kval) for kval in \
+        self.k_points['tpiba'] = np.array([[float(kval) for kval in \
                 r.text.split()] for r in self.xmltree.findall(\
-                './output/band_structure/ks_energies/k_point')]) * \
-                2*np.pi / self.alat
+                './output/band_structure/ks_energies/k_point')])
+        self.k_points['cartesian'] = self.k_points['tpiba'] * (2*np.pi / self.alat)
         #Use unit cell to get crystal coordinates k-points 
         self.k_points['crystal'] = np.matmul(self.k_points['cartesian'],\
                 (1/(2*np.pi)) * np.transpose(self.cell))
@@ -283,34 +281,33 @@ class XML_Data:
                 len(self.occupations), "The number of k-points doesn't match the "+\
                 "number of lists of KS eigenvalues or occupancies."
 
-        #Treat spin polarised case
-        if self.bs_keywords['lsda'] == 'true':
-            #Shape of eigenvalues
-            eval_shape = self.eigvals.shape
-            target_shape = (2, eval_shape[0], int(eval_shape[1]/2))
-            #Reshape eigenvalues
-            self.eigvals = self.eigvals.reshape(target_shape)
-            self.occupations = self.occupations.reshape(target_shape)
-
+        #Get Fermi energy and shift eigenvalues accordingly
+        self.get_fermi_energy()
+        self.eigvals -= self.fermi_energy[0]
 
     def get_fermi_energy(self):
         """
-        This function extracts the Fermi energy / energies
+        This function extracts the Fermi energy / energies, but uses the
+        highest occupied level when fixed occupancies are used
         """
-        #Get Fermi energy keyword depending on spin polarisation
-        if self.bs_keywords['lsda'] == 'true':
-            fermi_kw = 'two_fermi_energies'
-        else:
-            fermi_kw = 'fermi_energy'
-        #Get Fermi energy(ies)
-        self.fermi_energy = [float(ef) * Hartree for ef in self.\
+
+        #Use highest occupied level for Fermi energy if occupations fixed
+        if self.bands_keywords['occupations'] == 'fixed':
+            fermi_kw = 'highestOccupiedLevel'
+            self.fermi_energy = [float(ef) * Hartree for ef in self.\
                     bs_keywords[fermi_kw].split()]
+        else:
+            try:
+                fermi_kw = 'fermi_energy'
+                self.fermi_energy = [float(ef) * Hartree for ef in self.\
+                       bs_keywords[fermi_kw].split()]
+            except KeyError:
+                fermi_kw = 'two_fermi_energies'
+                self.fermi_energy = [float(ef) * Hartree for ef in self.\
+                        bs_keywords[fermi_kw].split()]
 
-        self.eigvals[0] -= self.fermi_energy[0]
-        self.eigvals[1] -= self.fermi_energy[1]
 
-
-    def band_structure(self, figsize=(6,6), energy_window=40):
+    def band_structure(self, figsize=10, energy_window=40):
         """
         Instantiates the BandStructure inner class with optional arguments.
         """
@@ -324,7 +321,7 @@ class XML_Data:
         plot
         """
 
-        def __init__(self, xml_data, figsize=(6,6), energy_window=10):
+        def __init__(self, xml_data, figsize=10, energy_window=10):
 
             #self.tolerance:
             self.tol = 1e-10
@@ -335,8 +332,10 @@ class XML_Data:
 
             #Plot characteristics
             self.figsize = figsize
-            self.spin_up_colour = 'b--'
-            self.spin_down_colour = 'r'
+            self.spin_up_colour = '--bo'
+            self.spin_down_colour = ':ro'
+            self.markersize = 2
+            self.linewidth = self.markersize / 3
             self.xlim = (0,1)
             self.xlabel = 'Wavevectors'
             self.ylabel = r'$E - E_{\mathrm{Fermi}}$ / eV'
@@ -345,12 +344,23 @@ class XML_Data:
             self.y_major_tick_formatter = '{x:.0f}'
             self.energy_window = energy_window
 
+            #Band gap characteristics
+            self.HO = None
+            self.LU = None
+            self.band_gap = None
+            self.nocc = int(np.ceil(float(self.xml_data.bs_keywords['nelec'])/2))
+
             #Bands and path related variables
             self.kpath_idx = []   #Indices from 0.0 to 1.0 of k-points
             self.path = None
             self.path_ticks = None
             self.labels = []
+            self.fermi_energy = self.xml_data.fermi_energy[0]
 
+            #Change rc params
+            plt.rcParams['axes.labelsize'] = 2*self.figsize
+            plt.rcParams['xtick.bottom'] = False
+            plt.rcParams['font.size'] = 2*self.figsize
 
         def get_highsym_data(self):
             """
@@ -397,7 +407,7 @@ class XML_Data:
             end_idx = strindex(self.input_lines, "ATOMIC_POSITIONS")
 
             #Extract path in crystal coordinates
-            self.path = np.array([[float(l) for l in line.split()[:-1]] for \
+            self.path = np.array([[float(l) for l in line.split()[:3]] for \
                     line in self.input_lines[start_idx + 2:end_idx] if \
                     line.split() != [] ])
 
@@ -444,7 +454,7 @@ class XML_Data:
             for ip, p in enumerate(self.path):
                 #Gamma point
                 if norm(p) < self.tol:
-                    self.labels.append(r"\Gamma")
+                    self.labels.append(r"$\Gamma$")
                 else:
                     self.labels.append(tuple(p))
 
@@ -453,20 +463,40 @@ class XML_Data:
             """
             This function plots the band structure
             """
-            fig, ax = plt.subplots(figsize=self.figsize)
+
+            #Start plot
+            fig, ax = plt.subplots(figsize=(self.figsize, self.figsize))
             #Spin polarised case
             if self.xml_data.bs_keywords['lsda'] == 'true':
-                ax.plot(self.kpath_idx, self.xml_data.eigvals[0], self.\
-                        spin_up_colour, label='Spin up', linewidth=1.0)
-                ax.plot(self.kpath_idx, np.flip(self.xml_data.eigvals[1],\
-                        axis=0), self.spin_down_colour, label='Spin down',\
-                        linewidth=1.0)
+                ax.plot(
+                        self.kpath_idx,
+                        self.xml_data.eigvals[:,:\
+                                int(self.xml_data.bs_keywords['nbnd_up'])],
+                        self.spin_up_colour, label='Spin up',
+                        linewidth=self.linewidth,
+                        markersize=self.markersize
+                        )
+                ax.plot(
+                        self.kpath_idx,
+                        self.xml_data.eigvals[:,\
+                                int(self.xml_data.bs_keywords['nbnd_dw']):],
+                        self.spin_down_colour,
+                        label='Spin down',
+                        linewidth=self.linewidth,
+                        markersize=self.markersize
+                        )
             else:
-                ax.plot(self.kpath_idx, self.xml_data.eigvals, self.\
-                        spin_up_colour)
+                ax.plot(
+                        self.kpath_idx,
+                        self.xml_data.eigvals,
+                        self.spin_up_colour,
+                        linewidth=self.linewidth,
+                        markersize=self.markersize
+                        )
 
             #Set energy (y) axis quantities
-            ylim = (-self.energy_window / 2, self.energy_window / 2)
+            ylim = (-self.energy_window / 2 ,\
+                    self.energy_window / 2)
             ax.set_ylim(ylim)
             ax.yaxis.set_major_locator(MultipleLocator( self.y_majorticks ))
             ax.yaxis.set_major_formatter(self.y_major_tick_formatter)
@@ -476,17 +506,80 @@ class XML_Data:
             #Set high-symmetry point quantities
             ax.set_xlim((0.0,1.0))
             ax.set_xticks(self.path_ticks)
-            ax.set_xticklabels(self.labels, rotation=45, fontsize=10)
+            ax.set_xticklabels(
+                    self.labels,
+                    rotation=45,
+                    fontsize=self.figsize * 1.5
+                    )
 
             #Plot vertical lines at each high-symmetry point
             for i, t in enumerate(self.path_ticks):
                 ax.axvline(x=t, c='k', linewidth=1)
+
+            #Plot horizontal line at the origin (Fermi energy)
+            ax.axhline(y=0.0, c='g', linestyle='--', linewidth=1)
 
             #Save figure
             fig.tight_layout()
             #fig.savefig(self.xml_data.replace('xml', 'pdf'))
 
             return None
+
+
+        def get_band_gap(self):
+            """
+            This function computes the band gap of the structure
+            """
+            #Fixed or smearing case
+            if self.xml_data.bands_keywords['occupations'] == 'fixed':
+                #Get HO & LU if present
+                if ('highestOccupiedLevel' in
+                        self.xml_data.bs_keywords.keys()):
+                    self.HO = float(self.xml_data.bs_keywords\
+                            ['highestOccupiedLevel']) * Hartree
+                elif ('lowestUnoccupiedLevel' in
+                            self.xml_data.bs_keywords.keys()):
+                    self.LU = float(self.xml_data.bs_keywords\
+                            ['lowestUnoccupiedLevel']) * Hartree
+
+                #If both HO & LU were found, band gap is the difference
+                if (self.HO is not None) and (self.LU is not None):
+                    self.band_gap = self.LU - self.HO
+                #Compute manually if not
+                else:
+                    self.compute_band_gap()
+            #Smearing case
+            else:
+                self.compute_band_gap()
+
+
+        def compute_band_gap(self):
+            """
+            This function computes the band gap explicitly from the k-point
+            eigenvalues if necessary.
+            """
+            #Get highest occupied and lowest unoccupied levels 
+            #for spin-polarised and spin-unpolarised cases
+            if self.xml_data.bs_keywords['lsda'] == 'true':
+                self.HO = min([self.xml_data.eigvals[:,self.nocc - 1].max(),
+                    self.xml_data.eigvals[:,self.nocc - 1 +\
+                            self.xml_data.nbnd].max()])
+                self.LU = min([self.xml_data.eigvals[:,self.nocc].min(),
+                    self.xml_data.eigvals[:,self.nocc + self.xml_data.nbnd].\
+                            min()])
+            else:
+                self.HO = self.xml_data.eigvals[:,self.nocc - 1].max()
+                self.LU = self.xml_data.eigvals[:,self.nocc].min()
+
+            #Get band gap
+            self.band_gap = self.LU - self.HO
+
+
+
+
+
+
+
 
 
 
