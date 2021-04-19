@@ -4,14 +4,22 @@ This file contains classes which contain the input and output structures from a
 quantum-espresso *name*.xml file.
 """
 
+#XML Parsing tools
 import xml.etree.ElementTree as ET
-from glob import glob
 from misctools import strindex
+
+#Data structures and calculating auxiliary quantities
 from ase.units import Bohr, Hartree
 import numpy as np
 from numpy.linalg import inv, norm
+
+#Plotting
 from matplotlib import pyplot as plt
 from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
+
+#Parsing command line options
+import sys
+import getopt
 
 class XML_Data:
 
@@ -32,7 +40,7 @@ class XML_Data:
         self.nbnd = None
 
         #Structural parameters (unit cell, atomic positions)
-        self.cell = []
+        self.cell = np.array([])
         self.positions = {}
         self.scaled_positions = {}
 
@@ -85,14 +93,15 @@ class XML_Data:
         Get unit cell as a matrix where each ROW is a lattice vector
 
         """
-        if self.cell != []:
+        if self.cell.size:
            return None
-
+        cell = []
         for r in self.xmltree.findall("./output/atomic_structure/cell/*"):
-            self.cell.append([float(component)*Bohr for component in \
+            cell.append([float(component)*Bohr for component in \
                     r.text.split()])
         #Convert to a numpy array
-        self.cell = np.array(self.cell)
+        self.cell = np.array(cell)
+
         self.reciprocal_cell = (2*np.pi) * np.transpose(inv(self.cell))
         self.recip_cell_xml = []
         for r in self.xmltree.findall\
@@ -108,7 +117,7 @@ class XML_Data:
         """
 
         #Ensure lattice vectors have been extracted
-        if self.cell == []:
+        if self.cell.size:
             self.get_cell()
         elif self.positions == {}:
             self.get_positions()
@@ -285,6 +294,7 @@ class XML_Data:
         self.get_fermi_energy()
         self.eigvals -= self.fermi_energy[0]
 
+
     def get_fermi_energy(self):
         """
         This function extracts the Fermi energy / energies, but uses the
@@ -292,6 +302,7 @@ class XML_Data:
         """
 
         #Use highest occupied level for Fermi energy if occupations fixed
+        #if True:
         if self.bands_keywords['occupations'] == 'fixed':
             fermi_kw = 'highestOccupiedLevel'
             self.fermi_energy = [float(ef) * Hartree for ef in self.\
@@ -307,10 +318,15 @@ class XML_Data:
                         bs_keywords[fermi_kw].split()]
 
 
-    def band_structure(self, figsize=10, energy_window=40):
+    def band_structure(self, figsize=10, energy_window=10):
         """
         Instantiates the BandStructure inner class with optional arguments.
         """
+        if self.control_variables['calculation'] != 'bands':
+            Warning("The xml file is written after a {} calculation, which "+\
+                    "is not a bands calculation, required for the "+\
+                    "production of a band structure.")
+
         return self.BandStructure(self, figsize=figsize, energy_window=\
                 energy_window)
 
@@ -332,8 +348,8 @@ class XML_Data:
 
             #Plot characteristics
             self.figsize = figsize
-            self.spin_up_colour = '--bo'
             self.spin_down_colour = ':ro'
+            self.spin_up_colour = '--bo'
             self.markersize = 2
             self.linewidth = self.markersize / 3
             self.xlim = (0,1)
@@ -362,6 +378,7 @@ class XML_Data:
             plt.rcParams['xtick.bottom'] = False
             plt.rcParams['font.size'] = 2*self.figsize
 
+
         def get_highsym_data(self):
             """
             Gets all data relative to the high-symmetry points in the Brillouin
@@ -371,6 +388,10 @@ class XML_Data:
             self.get_highsym_kpoints()
             self.get_highsym_ticks()
             self.get_highsym_points_labels()
+
+            #Get band gap
+            self.get_band_gap()
+            self.get_klocs_band_gap()
             return None
 
 
@@ -459,7 +480,7 @@ class XML_Data:
                     self.labels.append(tuple(p))
 
 
-        def plot_band_structure(self):
+        def plot_band_structure(self, save_pdf=True):
             """
             This function plots the band structure
             """
@@ -483,7 +504,8 @@ class XML_Data:
                         self.spin_down_colour,
                         label='Spin down',
                         linewidth=self.linewidth,
-                        markersize=self.markersize
+                        markersize=self.markersize,
+                        alpha=0.4
                         )
             else:
                 ax.plot(
@@ -514,14 +536,25 @@ class XML_Data:
 
             #Plot vertical lines at each high-symmetry point
             for i, t in enumerate(self.path_ticks):
-                ax.axvline(x=t, c='k', linewidth=1)
+                ax.axvline(x=t, c='k', linewidth=self.linewidth)
 
             #Plot horizontal line at the origin (Fermi energy)
-            ax.axhline(y=0.0, c='g', linestyle='--', linewidth=1)
+            ax.axhline(y=0.0, c='k', linestyle='--', linewidth=self.linewidth)
+
+            #Plot additions for insulating band structure
+            if (self.band_gap is not None) and (self.band_gap > 0.0):
+                #Coloured in section of gap
+                ax.axhspan(self.HO, self.LU, alpha=0.3, color='green')
+                #Positions of HO & LU k-points
+                for ho_idx in self.kpt_idx_HO:
+                    ax.plot(self.kpath_idx[ho_idx], self.HO, 'ko')
+                for lu_idx in self.kpt_idx_LU:
+                    ax.plot(self.kpath_idx[lu_idx], self.LU, 'ko')
 
             #Save figure
-            fig.tight_layout()
-            #fig.savefig(self.xml_data.replace('xml', 'pdf'))
+            if save_pdf:
+                fig.tight_layout()
+                fig.savefig(self.xml_data.xmlname.replace('xml', 'pdf'))
 
             return None
 
@@ -544,7 +577,7 @@ class XML_Data:
 
                 #If both HO & LU were found, band gap is the difference
                 if (self.HO is not None) and (self.LU is not None):
-                    self.band_gap = self.LU - self.HO
+                    self.band_gap = max(self.LU - self.HO, 0.0)
                 #Compute manually if not
                 else:
                     self.compute_band_gap()
@@ -561,7 +594,7 @@ class XML_Data:
             #Get highest occupied and lowest unoccupied levels 
             #for spin-polarised and spin-unpolarised cases
             if self.xml_data.bs_keywords['lsda'] == 'true':
-                self.HO = min([self.xml_data.eigvals[:,self.nocc - 1].max(),
+                self.HO = max([self.xml_data.eigvals[:,self.nocc - 1].max(),
                     self.xml_data.eigvals[:,self.nocc - 1 +\
                             self.xml_data.nbnd].max()])
                 self.LU = min([self.xml_data.eigvals[:,self.nocc].min(),
@@ -572,9 +605,90 @@ class XML_Data:
                 self.LU = self.xml_data.eigvals[:,self.nocc].min()
 
             #Get band gap
-            self.band_gap = self.LU - self.HO
+            self.band_gap = max(self.LU - self.HO, 0.0)
 
 
+        def get_klocs_band_gap(self, tol=1e-3):
+            """
+            Get the indices of the k-points at which the HO & LU occur
+            """
+            #Get indices of HO k-points
+            #Spin-polarised case
+            if self.xml_data.bs_keywords['lsda'] == 'true':
+                self.kpt_idx_HO = np.append(np.where(
+                    abs(self.xml_data.eigvals[:, self.nocc - 1] - self.HO) \
+                            < tol
+                    ), np.where(abs(
+                        self.xml_data.eigvals[:, self.nocc - 1 + \
+                                self.xml_data.nbnd]) < tol))
+                self.kpt_idx_LU = np.append(np.where(
+                    abs(self.xml_data.eigvals[:, self.nocc] - self.LU) < tol
+                    ), np.where(abs(
+                        self.xml_data.eigvals[:, self.nocc + \
+                                self.xml_data.nbnd]) < tol))
+            #Spin-unpolarised case
+            else:
+                self.kpt_idx_HO = np.where(
+                    abs(self.xml_data.eigvals[:, self.nocc - 1] - self.HO) < \
+                            tol
+                    )
+                self.kpt_idx_LU = np.where(
+                    abs(self.xml_data.eigvals[:, self.nocc] - self.LU) < tol
+                    )
+
+
+def main():
+    """
+    This main function reads a xml output file generated by PWscf (quantum-
+    espresso software package) and outputs the band-structure
+    """
+
+    #Get filename and any optional arguments
+    xmlname, kwargs = command_line_options()
+
+    #Read XML data file and band structure stuff
+    Atoms = XML_Data(xmlname)
+    BandStruc = Atoms.band_structure()
+    BandStruc.get_highsym_data() #Get high-symmetry points data
+    BandStruc.plot_band_structure()
+
+    return None
+
+
+def command_line_options():
+    """
+    This function parses the command line options to get the filename.
+    """
+
+    #Get filename
+    try:
+        xmlname = sys.argv[1]
+    except IndexError:
+        raise IndexError("No filename has been provided.")
+    #Other arguments
+    argv = sys.argv[2:]
+
+    #Iterate through options
+    kwargs = {}
+    opts, args = getopt.getopt(argv, "s:w:f:")
+    for opt, arg in opts:
+        if opt in ['-s', '--save-pdf']:
+            if arg in ['true', 'True', 'TRUE']:
+                arg = True
+            elif arg in ['false', 'False', 'False']:
+                arg = False
+            kwargs['save_fig'] = arg
+
+        elif opt in ['-w', '--energy-window']:
+            kwargs['energy_window'] = float(arg)
+
+        elif opt in ['-f', '--figure-size']:
+            kwargs['figsize'] = float(arg)
+
+    return xmlname, kwargs
+
+if __name__ == "__main__":
+    main()
 
 
 
