@@ -13,13 +13,11 @@ from ase.units import Bohr, Hartree
 import numpy as np
 from numpy.linalg import inv, norm
 
-#Plotting
-from matplotlib import pyplot as plt
-from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
-
-#Parsing command line options
-import sys
-import getopt
+#Font
+#plt.rcParams.update({
+#    "text.usetex": True,
+#    "font.family": "serif",
+#    "font.sans-serif": ["Palatino"]})
 
 class XML_Data:
 
@@ -72,8 +70,54 @@ class XML_Data:
         self.get_magnetisation_data()
         self.get_band_structure_keywords()
 
+        #Get number of bands
+        try:
+            self.nbnd = int(self.bands_keywords['nbnd'])
+        except KeyError:
+            self.nbnd = int(self.bs_keywords['nbnd'])
+
         #Get KS eigenvalues
         self.get_kpoint_eigenvalues()
+
+
+    def get_distance(self, i1, i2):
+        """
+        This function gets the absolute distance between two atoms indexed by
+        the indices i1 and i2.
+        """
+        key_list = list(self.positions)
+        key1, key2 = key_list[i1 - 1], key_list[i2 - 1]
+
+        return norm(np.array(self.positions[key1]) -\
+                np.array(self.positions[key2]))
+
+
+    def get_angle(i1,i2,i3):
+        """
+        This function returns the angle between the atoms with indices i1, i2
+        and i3 where i1 is the atom with respect to which the angle is compu-
+        ted.
+
+        The third index can also be one of x, y, z, xy, yz, xz and the angle
+        will be computed between the vector i2 - i1 and the corresponding axis
+        specified by i3. In this case, i3 is a string.
+
+        """
+        key1, key2 = list(ltt.positions)[i1 - 1], list(ltt.positions)[i2 - 1]
+        vec1 = np.array(ltt.positions[key2]) - np.array(ltt.positions[key1])
+
+        direction_dict = {'x': np.array([1,0,0]), 'y': np.array([0,1,0]),
+                'z': np.array([0,0,1]), 'xy': np.array([1,1,0]),
+                'yz': np.array([0,1,1]), 'xz': np.array([1,0,1])}
+
+        if i3 in direction_dict.keys():
+            vec2 = direction_dict[i3]
+        else:
+            key3 = list(ltt.positions)[i3 - 1]
+            vec2 = np.array(ltt.positions[key3]) - np.array(ltt.positions[key1])
+
+        return (180 / np.pi) * np.arccos(vec1.dot(vec2) / \
+                (norm(vec1) * norm(vec2)))
 
 
     def get_positions(self):
@@ -161,7 +205,11 @@ class XML_Data:
         """
         Get the XC functional used.
         """
+        xc_dict = {'MGGA_X_R2SCAN MGGA_C_R2SCAN': 'R2SCAN'}
         self.xc = self.xmltree.find('./input/dft/functional').text
+
+        if self.xc in xc_dict:
+            self.xc = xc_dict[self.xc]
 
 
     def get_bands_keywords(self):
@@ -173,7 +221,6 @@ class XML_Data:
 
         self.bands_keywords = {r.tag: r.text for r in self.xmltree.findall(\
                 './input/bands/*')}
-        self.nbnd = int(self.bands_keywords['nbnd'])
 
 
     def get_magnetisation_data(self):
@@ -318,374 +365,10 @@ class XML_Data:
                         bs_keywords[fermi_kw].split()]
 
 
-    def band_structure(self, figsize=10, energy_window=10):
-        """
-        Instantiates the BandStructure inner class with optional arguments.
-        """
-        if self.control_variables['calculation'] != 'bands':
-            Warning("The xml file is written after a {} calculation, which "+\
-                    "is not a bands calculation, required for the "+\
-                    "production of a band structure.")
-
-        return self.BandStructure(self, figsize=figsize, energy_window=\
-                energy_window)
-
-
-    class BandStructure:
-        """
-        This class contains all the methods and attributes for a band structure
-        plot
-        """
-
-        def __init__(self, xml_data, figsize=10, energy_window=10):
-
-            #self.tolerance:
-            self.tol = 1e-10
-            #Instantiate outer class XML_Data in the inner class 
-            self.xml_data = xml_data
-            self.bands_inputfile = self.xml_data.xmlname.replace('xml',\
-                    'bands.in')
-
-            #Plot characteristics
-            self.figsize = figsize
-            self.spin_down_colour = ':ro'
-            self.spin_up_colour = '--bo'
-            self.markersize = 2
-            self.linewidth = self.markersize / 3
-            self.xlim = (0,1)
-            self.xlabel = 'Wavevectors'
-            self.ylabel = r'$E - E_{\mathrm{Fermi}}$ / eV'
-            self.y_majorticks = 1
-            self.y_minorticks = 0.5
-            self.y_major_tick_formatter = '{x:.0f}'
-            self.energy_window = energy_window
-
-            #Band gap characteristics
-            self.HO = None
-            self.LU = None
-            self.band_gap = None
-            self.nocc = int(np.ceil(float(self.xml_data.bs_keywords['nelec'])/2))
-
-            #Bands and path related variables
-            self.kpath_idx = []   #Indices from 0.0 to 1.0 of k-points
-            self.path = None
-            self.path_ticks = None
-            self.labels = []
-            self.fermi_energy = self.xml_data.fermi_energy[0]
-
-            #Change rc params
-            plt.rcParams['axes.labelsize'] = 2*self.figsize
-            plt.rcParams['xtick.bottom'] = False
-            plt.rcParams['font.size'] = 2*self.figsize
-
-
-        def get_highsym_data(self):
-            """
-            Gets all data relative to the high-symmetry points in the Brillouin
-            zone required to perform the plot.
-            """
-            self.get_kpath_indices()
-            self.get_highsym_kpoints()
-            self.get_highsym_ticks()
-            self.get_highsym_points_labels()
-
-            #Get band gap
-            self.get_band_gap()
-            self.get_klocs_band_gap()
-            return None
-
-
-        def get_kpath_indices(self):
-            """
-            This function takes a set of k-points and associates to it a list of
-            non-negative real numbers corresponding to the distance from the
-            initial k-point on the path.
-            """
-            path = []
-            for i, kpt in enumerate(self.xml_data.k_points['cartesian']):
-                if i == 0:
-                    path.append(0.0)
-                else:
-                    path.append(path[i-1] + norm(kpt - \
-                            self.xml_data.k_points['cartesian'][i-1]))
-
-            #Normalise list between 0.0 and 1.0
-            self.kpath_idx = [(idx - path[0]) / (path[-1] - path[0]) for idx \
-                    in path]
-
-
-        def get_highsym_kpoints(self):
-            """
-            Gets the high-symmetry points used to perform the band structure
-            calculation
-            """
-            #Open bands input file
-            with open(self.bands_inputfile, 'r+') as f:
-                self.input_lines = f.readlines()
-
-            #Get start and end indices
-            start_idx = strindex(self.input_lines, "K_POINTS crystal")
-            end_idx = strindex(self.input_lines, "ATOMIC_POSITIONS")
-
-            #Extract path in crystal coordinates
-            self.path = np.array([[float(l) for l in line.split()[:3]] for \
-                    line in self.input_lines[start_idx + 2:end_idx] if \
-                    line.split() != [] ])
-
-
-        def get_highsym_ticks(self):
-            """
-            This function gets the locations of the high-symmetry points along
-            the x-axis of the plot.
-            """
-
-            #Define high-symmetry point ticks: 
-            self.path_ticks = np.zeros(len(self.path))
-
-            #Ensure first and last high-symmetry point correspond with start
-            #and end of k-point list
-            assert norm(self.path[0] - self.xml_data.k_points['crystal'][0]) <\
-            self.tol and norm(self.path[-1] - self.xml_data.k_points['crystal']\
-                    [-1]) < self.tol, "Initial and final are not what is expected"
-
-            #Set the values of the first and last ticks
-            self.path_ticks[0] = 0.0
-            self.path_ticks[-1] = 1.0
-
-            #Initial k-point index
-            kpt_idx = 1
-            #Iterate over non-extremal high-symmetry points
-            for ip, p in enumerate(self.path[1:-1]):
-                #Iterate over k-points
-                for ik, k in enumerate(self.xml_data.k_points['crystal']):
-                    #Only consider k-points above index
-                    if ik < kpt_idx:
-                        continue
-                    if norm(k-p) < self.tol:
-                        kpt_idx = ik + 1 #Start at next k-point after match
-                        self.path_ticks[ip + 1] = self.kpath_idx[ik]
-                        break
-
-
-        def get_highsym_points_labels(self):
-            """
-            This function returns the labels used when plotting the band struc-
-            -ture.
-            """
-            for ip, p in enumerate(self.path):
-                #Gamma point
-                if norm(p) < self.tol:
-                    self.labels.append(r"$\Gamma$")
-                else:
-                    self.labels.append(tuple(p))
-
-
-        def plot_band_structure(self, save_pdf=True):
-            """
-            This function plots the band structure
-            """
-
-            #Start plot
-            fig, ax = plt.subplots(figsize=(self.figsize, self.figsize))
-            #Spin polarised case
-            if self.xml_data.bs_keywords['lsda'] == 'true':
-                ax.plot(
-                        self.kpath_idx,
-                        self.xml_data.eigvals[:,:\
-                                int(self.xml_data.bs_keywords['nbnd_up'])],
-                        self.spin_up_colour, label='Spin up',
-                        linewidth=self.linewidth,
-                        markersize=self.markersize
-                        )
-                ax.plot(
-                        self.kpath_idx,
-                        self.xml_data.eigvals[:,\
-                                int(self.xml_data.bs_keywords['nbnd_dw']):],
-                        self.spin_down_colour,
-                        label='Spin down',
-                        linewidth=self.linewidth,
-                        markersize=self.markersize,
-                        alpha=0.4
-                        )
-            else:
-                ax.plot(
-                        self.kpath_idx,
-                        self.xml_data.eigvals,
-                        self.spin_up_colour,
-                        linewidth=self.linewidth,
-                        markersize=self.markersize
-                        )
-
-            #Set energy (y) axis quantities
-            ylim = (-self.energy_window / 2 ,\
-                    self.energy_window / 2)
-            ax.set_ylim(ylim)
-            ax.yaxis.set_major_locator(MultipleLocator( self.y_majorticks ))
-            ax.yaxis.set_major_formatter(self.y_major_tick_formatter)
-            ax.yaxis.set_minor_locator(MultipleLocator( self.y_minorticks ))
-            ax.set_ylabel( self.ylabel )
-
-            #Set high-symmetry point quantities
-            ax.set_xlim((0.0,1.0))
-            ax.set_xticks(self.path_ticks)
-            ax.set_xticklabels(
-                    self.labels,
-                    rotation=45,
-                    fontsize=self.figsize * 1.5
-                    )
-
-            #Plot vertical lines at each high-symmetry point
-            for i, t in enumerate(self.path_ticks):
-                ax.axvline(x=t, c='k', linewidth=self.linewidth)
-
-            #Plot horizontal line at the origin (Fermi energy)
-            ax.axhline(y=0.0, c='k', linestyle='--', linewidth=self.linewidth)
-
-            #Plot additions for insulating band structure
-            if (self.band_gap is not None) and (self.band_gap > 0.0):
-                #Coloured in section of gap
-                ax.axhspan(self.HO, self.LU, alpha=0.3, color='green')
-                #Positions of HO & LU k-points
-                for ho_idx in self.kpt_idx_HO:
-                    ax.plot(self.kpath_idx[ho_idx], self.HO, 'ko')
-                for lu_idx in self.kpt_idx_LU:
-                    ax.plot(self.kpath_idx[lu_idx], self.LU, 'ko')
-
-            #Save figure
-            if save_pdf:
-                fig.tight_layout()
-                fig.savefig(self.xml_data.xmlname.replace('xml', 'pdf'))
-
-            return None
-
-
-        def get_band_gap(self):
-            """
-            This function computes the band gap of the structure
-            """
-            #Fixed or smearing case
-            if self.xml_data.bands_keywords['occupations'] == 'fixed':
-                #Get HO & LU if present
-                if ('highestOccupiedLevel' in
-                        self.xml_data.bs_keywords.keys()):
-                    self.HO = float(self.xml_data.bs_keywords\
-                            ['highestOccupiedLevel']) * Hartree
-                elif ('lowestUnoccupiedLevel' in
-                            self.xml_data.bs_keywords.keys()):
-                    self.LU = float(self.xml_data.bs_keywords\
-                            ['lowestUnoccupiedLevel']) * Hartree
-
-                #If both HO & LU were found, band gap is the difference
-                if (self.HO is not None) and (self.LU is not None):
-                    self.band_gap = max(self.LU - self.HO, 0.0)
-                #Compute manually if not
-                else:
-                    self.compute_band_gap()
-            #Smearing case
-            else:
-                self.compute_band_gap()
-
-
-        def compute_band_gap(self):
-            """
-            This function computes the band gap explicitly from the k-point
-            eigenvalues if necessary.
-            """
-            #Get highest occupied and lowest unoccupied levels 
-            #for spin-polarised and spin-unpolarised cases
-            if self.xml_data.bs_keywords['lsda'] == 'true':
-                self.HO = max([self.xml_data.eigvals[:,self.nocc - 1].max(),
-                    self.xml_data.eigvals[:,self.nocc - 1 +\
-                            self.xml_data.nbnd].max()])
-                self.LU = min([self.xml_data.eigvals[:,self.nocc].min(),
-                    self.xml_data.eigvals[:,self.nocc + self.xml_data.nbnd].\
-                            min()])
-            else:
-                self.HO = self.xml_data.eigvals[:,self.nocc - 1].max()
-                self.LU = self.xml_data.eigvals[:,self.nocc].min()
-
-            #Get band gap
-            self.band_gap = max(self.LU - self.HO, 0.0)
-
-
-        def get_klocs_band_gap(self, tol=1e-3):
-            """
-            Get the indices of the k-points at which the HO & LU occur
-            """
-            #Get indices of HO k-points
-            #Spin-polarised case
-            if self.xml_data.bs_keywords['lsda'] == 'true':
-                self.kpt_idx_HO = np.append(np.where(
-                    abs(self.xml_data.eigvals[:, self.nocc - 1] - self.HO) \
-                            < tol
-                    ), np.where(abs(
-                        self.xml_data.eigvals[:, self.nocc - 1 + \
-                                self.xml_data.nbnd]) < tol))
-                self.kpt_idx_LU = np.append(np.where(
-                    abs(self.xml_data.eigvals[:, self.nocc] - self.LU) < tol
-                    ), np.where(abs(
-                        self.xml_data.eigvals[:, self.nocc + \
-                                self.xml_data.nbnd]) < tol))
-            #Spin-unpolarised case
-            else:
-                self.kpt_idx_HO = np.where(
-                    abs(self.xml_data.eigvals[:, self.nocc - 1] - self.HO) < \
-                            tol
-                    )
-                self.kpt_idx_LU = np.where(
-                    abs(self.xml_data.eigvals[:, self.nocc] - self.LU) < tol
-                    )
-
-
 def main():
-    """
-    This main function reads a xml output file generated by PWscf (quantum-
-    espresso software package) and outputs the band-structure
-    """
-
-    #Get filename and any optional arguments
-    xmlname, kwargs = command_line_options()
-
-    #Read XML data file and band structure stuff
-    Atoms = XML_Data(xmlname)
-    BandStruc = Atoms.band_structure()
-    BandStruc.get_highsym_data() #Get high-symmetry points data
-    BandStruc.plot_band_structure()
-
     return None
 
 
-def command_line_options():
-    """
-    This function parses the command line options to get the filename.
-    """
-
-    #Get filename
-    try:
-        xmlname = sys.argv[1]
-    except IndexError:
-        raise IndexError("No filename has been provided.")
-    #Other arguments
-    argv = sys.argv[2:]
-
-    #Iterate through options
-    kwargs = {}
-    opts, args = getopt.getopt(argv, "s:w:f:")
-    for opt, arg in opts:
-        if opt in ['-s', '--save-pdf']:
-            if arg in ['true', 'True', 'TRUE']:
-                arg = True
-            elif arg in ['false', 'False', 'False']:
-                arg = False
-            kwargs['save_fig'] = arg
-
-        elif opt in ['-w', '--energy-window']:
-            kwargs['energy_window'] = float(arg)
-
-        elif opt in ['-f', '--figure-size']:
-            kwargs['figsize'] = float(arg)
-
-    return xmlname, kwargs
 
 if __name__ == "__main__":
     main()
