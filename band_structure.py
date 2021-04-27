@@ -12,6 +12,7 @@ from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
 #Parsing command line options
 import sys
 import getopt
+        
 
 class BandStructure:
      """
@@ -22,45 +23,45 @@ class BandStructure:
      def __init__(self, xmlname, figsize=6, ratio=0.8, ymin=-9, ymax=5,
              units='ase'):
 
-         #self.tolerance:
-         self.tol = 1e-10
-         #Instantiate outer class XML_Data in the inner class 
-         self.Structure = XML_Data(xmlname, units=units)
-         self.bands_inputfile = self.Structure.xmlname.replace('xml',\
-                 'bands.in')
+        #self.tolerance:
+        self.tol = 1e-10
+        #Instantiate outer class XML_Data in the inner class 
+        self.Structure = XML_Data(xmlname, units=units)
+        self.bands_inputfile = self.Structure.xmlname.replace('xml',\
+                'bands.in')
 
-         #Plot characteristics
-         self.ratio = ratio
-         self.figsize = figsize
-         self.spin_down_colour = ':ro'
-         self.spin_up_colour = '--bo'
-         self.markersize = 2
-         self.linewidth = self.markersize / 3
-         self.xlim = (0,1)
-         self.xlabel = 'Wavevectors'
-         self.ylabel = r'$E - E_{\mathrm{Fermi}}$ / eV'
-         self.y_majorticks = 2.0
-         self.y_minorticks = 1.0
-         self.y_major_tick_formatter = '{x:.0f}'
-         self.ylim = (ymin, ymax)
+        #Plot characteristics
+        self.ratio = ratio
+        self.figsize = figsize
+        self.spin_down_colour = ':ro'
+        self.spin_up_colour = '--bo'
+        self.markersize = 2
+        self.linewidth = self.markersize / 3
+        self.xlim = (0,1)
+        self.xlabel = 'Wavevectors'
+        self.ylabel = r'$E - E_{\mathrm{Fermi}}$ / eV'
+        self.y_majorticks = 2.0
+        self.y_minorticks = 1.0
+        self.y_major_tick_formatter = '{x:.0f}'
+        self.ylim = (ymin, ymax)
 
-         #Band gap characteristics
-         self.HO = None
-         self.LU = None
-         self.band_gap = None
-         self.nocc = int(np.ceil(float(self.Structure.bs_keywords['nelec'])/2))
+        #Band gap characteristics
+        self.HO = None
+        self.LU = None
+        self.band_gap = None
+        self.nocc = int(np.ceil(float(self.Structure.bs_keywords['nelec'])/2))
 
-         #Bands and path related variables
-         self.kpath_idx = []   #Indices from 0.0 to 1.0 of k-points
-         self.path = None
-         self.path_ticks = None
-         self.labels = []
-         self.fermi_energy = self.Structure.fermi_energy[0]
+        #Bands and path related variables
+        self.kpath_idx = []   #Indices from 0.0 to 1.0 of k-points
+        self.path = None
+        self.path_ticks = None
+        self.labels = []
+        self.fermi_energy = self.Structure.fermi_energy[0]
 
-         #Change rc params
-         plt.rcParams['axes.labelsize'] = 2*self.figsize
-         plt.rcParams['xtick.bottom'] = False
-         plt.rcParams['font.size'] = 2*self.figsize
+        #Change rc params
+        plt.rcParams['axes.labelsize'] = 2*self.figsize
+        plt.rcParams['xtick.bottom'] = False
+        plt.rcParams['font.size'] = 2*self.figsize
 
 
      def get_highsym_data(self):
