@@ -92,7 +92,7 @@ class XML_Data:
                 np.array(self.positions[key2]))
 
 
-    def get_angle(i1,i2,i3):
+    def get_angle(self,i1,i2,i3):
         """
         This function returns the angle between the atoms with indices i1, i2
         and i3 where i1 is the atom with respect to which the angle is compu-
@@ -103,8 +103,8 @@ class XML_Data:
         specified by i3. In this case, i3 is a string.
 
         """
-        key1, key2 = list(ltt.positions)[i1 - 1], list(ltt.positions)[i2 - 1]
-        vec1 = np.array(ltt.positions[key2]) - np.array(ltt.positions[key1])
+        key1, key2 = list(self.positions)[i1 - 1], list(self.positions)[i2 - 1]
+        vec1 = np.array(self.positions[key2]) - np.array(self.positions[key1])
 
         direction_dict = {'x': np.array([1,0,0]), 'y': np.array([0,1,0]),
                 'z': np.array([0,0,1]), 'xy': np.array([1,1,0]),
@@ -113,8 +113,8 @@ class XML_Data:
         if i3 in direction_dict.keys():
             vec2 = direction_dict[i3]
         else:
-            key3 = list(ltt.positions)[i3 - 1]
-            vec2 = np.array(ltt.positions[key3]) - np.array(ltt.positions[key1])
+            key3 = list(self.positions)[i3 - 1]
+            vec2 = np.array(self.positions[key3]) - np.array(self.positions[key1])
 
         return (180 / np.pi) * np.arccos(vec1.dot(vec2) / \
                 (norm(vec1) * norm(vec2)))
@@ -253,6 +253,24 @@ class XML_Data:
                 break
             else:
                 self.bs_keywords[r.tag] = r.text
+
+
+    def get_spin_splitting(self):
+        """
+        This function returns the average difference between the eigenvalues
+        of spin up and spin down channels
+        """
+
+        assert self.nbnd == \
+                int(self.bs_keywords['nbnd_up']) == \
+                int(self.bs_keywords['nbnd_dw']),\
+                "The spin-splitting can only be measured in cases where the"+\
+                "number of spin-up and spin-down bands are the same."
+
+        eigval_diff = abs(self.eigvals[:, :self.nbnd] -
+                self.eigvals[:, self.nbnd:])
+        self.mean_spin_splitting = np.sum(eigval_diff) / eigval_diff.size
+        self.max_spin_splitting = np.max(eigval_diff)
 
 
     def compute_band_gap(self):
