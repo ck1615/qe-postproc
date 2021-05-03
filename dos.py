@@ -4,6 +4,8 @@ This file contains classes and methods to plot (i) total and (ii) projected
 densities of states in spin-polarised and unpolarised cases.
 """
 
+colour_key_file = '/Users/christopherkeegan/.local/bin/qe-parser/colour.key'
+
 from structure import XML_Data
 import numpy as np
 from glob import glob
@@ -14,6 +16,8 @@ import re
 #Plotting
 from matplotlib import pyplot as plt
 from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
+import matplotlib.colors as colors
+import matplotlib.cm as cm
 
 #Parsing command line options
 import sys
@@ -50,6 +54,7 @@ class DensityOfStates:
         self.angmom_name = {'s': {0: ' '}, 'p': {0: 'z', 1: 'x',\
                 2: 'y'}, 'd': {0: "z^{2}", 1: 'zx', 2: 'zy', \
                 3: "x^{2} - y^{2}", 4: 'xy'}}
+
 
         #Plot characteristics
         self.ratio = ratio
@@ -124,8 +129,30 @@ class DensityOfStates:
             #Allocate data to self.pdos dictionary
             self.allocate_pdos_arrays(atom, orb, data)
 
-
         return None
+
+
+    def get_colour_symbols(self):
+        """
+        This function extracts from the colour.key file a list of colours to
+        be allocated to various atoms and their orbitals.
+        """
+        with open(colour_key_file, 'r+') as f:
+            self.colours = f.read().splitlines()
+
+
+    def allocate_colours(self, atom, orb):
+        """
+        This function creates a dictionary associating a colours to each orbi-
+        -tal of each atom.
+        """
+
+        if atom not in self.orbital_colour:
+            self.orbital_colour[atom] = {}
+
+        if orb not in self.orbital_colour[atom]:
+            self.orbital_colour[atom][orb] = self.colours[self.colour_count]
+            self.colour_count += 1
 
 
     def extract_pdos_data(self, fname):
@@ -137,6 +164,10 @@ class DensityOfStates:
         assert len(ls) == len(rs) == 2, "Number of parentheses not the same"
         atom = fname[ls[0]:rs[0]]
         orb = fname[ls[1]:rs[1]]
+
+        #Check last character of atom name is not a number. If so, remove it
+        if atom[-1] in [str(n) for n in range(10)]:
+            atom = atom[:-1]
 
         #Load data
         data = np.loadtxt(fname)
@@ -187,8 +218,10 @@ class DensityOfStates:
         """
         #Read the data files
         self.read_data_files()
+        #Get density of states extrema
+        self.get_extrema_density_of_states()
         #Plot the DOS
-        if self.dos_type == "total":
+        if self.dos_type == 'total':
             self.plot_total_dos()
         elif self.dos_type == 'projected':
             self.plot_projected_dos()
@@ -247,6 +280,17 @@ class DensityOfStates:
                     "Allowed values are: 'total' and 'projected'.")
 
 
+    def get_extrema_density_of_states(self):
+
+
+        idx_min = np.where(self.dos[:,0] > self.xlim[0])[0][0]
+        idx_max = np.where(self.dos[:,0] < self.xlim[1])[0][-1]
+
+        ymax = self.dos[:,1][idx_min: idx_max + 1].max()
+        ymin = self.dos[:,1][idx_min: idx_max + 1].min()
+        self.ylim = (ymin, ymax)
+
+
     def plot_projected_dos(self):
         """
         This function plots the projected Density of States
@@ -255,22 +299,33 @@ class DensityOfStates:
         fig, ax = plt.subplots(figsize=(self.figsize, self.figsize*self.ratio))
 
         #List of maximum of each projected DOS channel
-        max_projections =[]
+        max_projections = []
 
-        #PDOS
+        #Initialise colour map
+        self.num_orbitals = sum(len(val.keys()) for key, val \
+                in self.pdos['up'].items())
+        cmap = plt.get_cmap('hsv')
+        cnorm = colors.Normalize(vmin=0, vmax=self.num_orbitals)
+        scalar_map = cm.ScalarMappable(norm=cnorm, cmap=cmap)
+
         #Determine number of spin-channels to plot
         if self.max_nspin == 2:
             spin_channels = ['up', 'down']
-            ax.axhline(y=0.0,c='k', linewidth=1.0)
+            ax.axhline(y=0.0, c='k', linewidth=1.0)
         else:
             spin_channels = ['up']
+
+        #Count total number of orbitals
 
         #Iterate over spin-channels
         for i, sp in enumerate(spin_channels):
             #Iterate over atomic species
+            colour_count = 1
             for atom in self.pdos[sp]:
                 #Iterate over orbitals
                 for orb, pdosvals in self.pdos[sp][atom].items():
+                    #Get colour RBG format
+                    colour = scalar_map.to_rgba(colour_count)
                     x = pdosvals[:,0] - self.fermi_energy
                     if self.angmom:
                         #Keep individual orbital angular momentum channels
@@ -282,22 +337,27 @@ class DensityOfStates:
                             if orb == "s":
                                 label=orb
                             else:
-                                label = r'$\mathrm{{{}_{{{}}}}}$'.\
-                                        format(orb,self.angmom_name[orb][m])
+                                label = r'{} $\mathrm{{{}_{{{}}}}}$'.\
+                                        format(atom, orb , self.angmom_name[orb][m])
                             #Add channel to plot
-                            ax.plot(x,y,label=label)
+                            ax.plot(x, y, label=label,
+                                    c=colour)
                     else:
                         #Sum over orbital angular momentum channels 
                         y = (-1) ** (i) * np.sum(pdosvals[:,1:\
                                 (2*self.orbital_number[orb]+1+1)], axis=1)
                         max_projections.append(np.max(y))
-                        ax.plot(x,y,label=orb)
+                        ax.plot(x, y, label="{} {}".format(atom, orb),
+                                c=colour)
+                    #Update colour count
+                    colour_count += 1
 
             #Add total DOS too in black
             ax.plot(self.dos[:,0] - self.fermi_energy, (-1)**(i) * \
                     self.dos[:,i+1], 'k')
 
         #Set x-axis quantities
+        #Get DOS maximum
         ax.set_xlim(self.xlim)
         ax.set_xlabel( self.xlabel )
         ax.xaxis.set_major_locator(MultipleLocator(2))
@@ -305,11 +365,18 @@ class DensityOfStates:
 
         #Set y-axis quantities
         ax.set_ylabel( self.ylabel )
+        if self.max_nspin != 2:
+            ax.set_ylim((0.0, self.ylim[1]))
+        else:
+            ax.set_ylim(self.ylim)
 
         #Add vertical line for Fermi Energy
         ax.axvline(x=0.0, linewidth=1.0, c='k')
         #Finish plot
-        plt.legend()
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        plt.legend(by_label.values(), by_label.keys(),fontsize='xx-small',
+                ncol=2)
         plt.tight_layout()
         plt.savefig(self.xmlname.replace('.xml','_pdos.pdf'))
 
@@ -328,7 +395,8 @@ class DensityOfStates:
                 self.dos[:,1],
                 self.spin_up_colour, label='Spin up',
                 linewidth=self.linewidth,
-                markersize=self.markersize
+                markersize=self.markersize,
+                color='k'
                 )
         if self.spin_polarised:
             #Add second spin-channel
@@ -338,7 +406,8 @@ class DensityOfStates:
                     self.spin_down_colour,
                     label='Spin down',
                     linewidth=self.linewidth,
-                    markersize=self.markersize
+                    markersize=self.markersize,
+                    color='k'
                     )
             #Add y = 0 line to separate two spin-channels
             ax.axhline(y=0.0, c='k', linewidth = self.linewidth )
@@ -358,8 +427,12 @@ class DensityOfStates:
         ax.set_xlabel( self.xlabel )
 
         #Set DOS (y) axis quantities
-        if not self.spin_polarised:
-            ax.set_ylim(bottom=0.0)
+        if self.spin_polarised:
+            print('Spin polarised, {}'.format(self.ylim))
+            ax.set_ylim(self.ylim)
+        else:
+            print("Spin unpolarised")
+            ax.set_ylim((0.0,self.ylim[1]))
 
         #ax.yaxis.set_major_locator(MultipleLocator( self.y_majorticks ))
         #ax.yaxis.set_minor_locator(MultipleLocator( self.y_minorticks ))
@@ -401,7 +474,7 @@ def command_line_options():
 
     #Iterate through options
     kwargs = {}
-    opts, args = getopt.getopt(argv, "t:f:r:s:m:")
+    opts, args = getopt.getopt(argv, "t:f:r:s:m:l:u:")
     for opt, arg in opts:
         if opt in ['-t', '--type-dos-plot']:
             kwargs['dos_type'] = arg
@@ -415,6 +488,11 @@ def command_line_options():
             assert arg in ['0', '1'], "Angular momentum option has to be "+\
                     " either 0 (False) or 1 (True)."
             kwargs['angmom'] = bool(int(arg))
+        elif opt in ['-l', '--lower-energy-bound']:
+            kwargs['emin'] = float(arg)
+        elif opt in ['-u', '--upper-energy-bound']:
+            kwargs['emax'] = float(arg)
+
 
     return xmlname, kwargs
 
