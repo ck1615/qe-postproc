@@ -224,15 +224,21 @@ class BandStructure:
             self.HO = max([self.Structure.eigvals[:,self.nocc - 1].max(),
                 self.Structure.eigvals[:,self.nocc - 1 +\
                         self.Structure.nbnd].max()])
-            self.LU = min([self.Structure.eigvals[:,self.nocc].min(),
-                self.Structure.eigvals[:,self.nocc + self.Structure.nbnd].\
-                        min()])
+            try:
+                self.LU = min([self.Structure.eigvals[:,self.nocc].min(),
+                    self.Structure.eigvals[:,self.nocc + self.Structure.nbnd].\
+                            min()])
+                self.band_gap = max(self.LU - self.HO, 0.0)
+            except IndexError:
+                Warning("Cannot compute band gap because not enough bands.")
+                self.band_gap = None
+                pass
+
         else:
             self.HO = self.Structure.eigvals[:,self.nocc - 1].max()
             self.LU = self.Structure.eigvals[:,self.nocc].min()
-
-        #Get band gap
-        self.band_gap = max(self.LU - self.HO, 0.0)
+            #Get band gap
+            self.band_gap = max(self.LU - self.HO, 0.0)
 
 
     def get_klocs_band_gap(self, tol=1e-4):

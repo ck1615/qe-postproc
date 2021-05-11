@@ -74,7 +74,10 @@ class XML_Data:
         try:
             self.nbnd = int(self.bands_keywords['nbnd'])
         except KeyError:
-            self.nbnd = int(self.bs_keywords['nbnd'])
+            try:
+                self.nbnd = int(self.bs_keywords['nbnd'])
+            except KeyError:
+                self.nbnd = int(self.bs_keywords['nbnd_up'])
 
         #Get KS eigenvalues
         self.get_kpoint_eigenvalues()
@@ -382,6 +385,16 @@ class XML_Data:
                 self.fermi_energy = [float(ef) * Hartree for ef in self.\
                         bs_keywords[fermi_kw].split()]
 
+
+    def measure_rumpling(self, i1, i2):
+        """
+        Measures the vertical separation between the La atoms and apical O
+        atoms in lanthanum oxides.
+        """
+        #Get keys
+        key1, key2 = list(self.positions)[i1 - 1], list(self.positions)[i2 - 1]
+
+        return self.positions[key1][2] - self.positions[key2][2]
 
 def main():
     return None

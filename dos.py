@@ -23,6 +23,8 @@ import matplotlib.cm as cm
 import sys
 import getopt
 
+markers = ["x", "+", "d", "1", '*']
+
 
 class DensityOfStates:
     """
@@ -32,7 +34,7 @@ class DensityOfStates:
 
     def __init__(self, xmlname, dos_type='projected', figsize=10, ratio=0.6,
             emin=-10, emax=10, units='ase', full_energy_range=False,
-            max_nspin=2, savefig=True, angmom=True):
+            max_nspin=2, savefig=True, angmom=True, total_dos=False):
 
         #xml filename and type of DoS desired
         self.xmlname = xmlname
@@ -43,6 +45,8 @@ class DensityOfStates:
         self.units = units
         self.savefig = savefig
         self.angmom = angmom
+        self.total_dos = total_dos
+        self.max_projections = []
 
         #Total dos filename and array
         self.dos_fname = None
@@ -73,8 +77,6 @@ class DensityOfStates:
 
         #Whether plotting full energy range or not
         self.full_energy_range = full_energy_range
-        #Maximum number of spin channels to plot
-        self.max_nspin = max_nspin
 
         #XML data
         self.Structure = XML_Data(xmlname, units=self.units)
@@ -89,6 +91,11 @@ class DensityOfStates:
         #Determine spin-polarisation
         self.spin_polarised = None
         self.get_spin_polarisation()
+        #Maximum number of spin channels to plot
+        if self.spin_polarised:
+            self.max_nspin = max_nspin
+        else:
+            self.max_nspin = 1
 
         #Get Fermi Energy
         self.get_fermi_energy()
@@ -130,15 +137,6 @@ class DensityOfStates:
             self.allocate_pdos_arrays(atom, orb, data)
 
         return None
-
-
-    def get_colour_symbols(self):
-        """
-        This function extracts from the colour.key file a list of colours to
-        be allocated to various atoms and their orbitals.
-        """
-        with open(colour_key_file, 'r+') as f:
-            self.colours = f.read().splitlines()
 
 
     def allocate_colours(self, atom, orb):
@@ -218,8 +216,6 @@ class DensityOfStates:
         """
         #Read the data files
         self.read_data_files()
-        #Get density of states extrema
-        self.get_extrema_density_of_states()
         #Plot the DOS
         if self.dos_type == 'total':
             self.plot_total_dos()
@@ -283,15 +279,19 @@ class DensityOfStates:
     def get_extrema_density_of_states(self):
 
 
-        idx_min = np.where(self.dos[:,0] > self.xlim[0])[0][0]
-        idx_max = np.where(self.dos[:,0] < self.xlim[1])[0][-1]
+        idx_min = np.where(self.dos[:,0] > self.fermi_energy + \
+                self.xlim[0])[0][0]
+        idx_max = np.where(self.dos[:,0] < self.fermi_energy + \
+                self.xlim[1])[0][-1]
 
-        ymax = self.dos[:,1][idx_min: idx_max + 1].max()
-        ymin = self.dos[:,1][idx_min: idx_max + 1].min()
+        ymax = self.dos[idx_min: idx_max + 1, 1].max()
+        if self.max_nspin == 2:
+            ymin = -self.dos[idx_min: idx_max + 1, 2].max()
+        else:
+            ymin = 0.0
         self.ylim = (ymin, ymax)
 
-
-    def plot_projected_dos(self):
+    def plot_projected_dos(self, total_dos=True):
         """
         This function plots the projected Density of States
         """
@@ -315,8 +315,6 @@ class DensityOfStates:
         else:
             spin_channels = ['up']
 
-        #Count total number of orbitals
-
         #Iterate over spin-channels
         for i, sp in enumerate(spin_channels):
             #Iterate over atomic species
@@ -327,33 +325,34 @@ class DensityOfStates:
                     #Get colour RBG format
                     colour = scalar_map.to_rgba(colour_count)
                     x = pdosvals[:,0] - self.fermi_energy
-                    if self.angmom:
+                    if self.angmom and (orb != 'f'):
                         #Keep individual orbital angular momentum channels
-                        for m in range(2*self.orbital_number[orb]+1):
-                            y = (-1)**(i) * pdosvals[:,m+1]
-                            max_projections.append(np.max(y))
-
+                        for m in range(2 * self.orbital_number[orb]+1):
+                            y = (-1)**(i) * pdosvals[:, m + 1]
+                            #Append to maximum projectiosn
+                            self.get_extrema_density_of_states(y)
                             #Define labels
                             if orb == "s":
-                                label=orb
+                                label="{} {}".format(atom, orb)
                             else:
                                 label = r'{} $\mathrm{{{}_{{{}}}}}$'.\
                                         format(atom, orb , self.angmom_name[orb][m])
                             #Add channel to plot
                             ax.plot(x, y, label=label,
-                                    c=colour)
+                                    c=colour, marker=markers[m])
                     else:
                         #Sum over orbital angular momentum channels 
                         y = (-1) ** (i) * np.sum(pdosvals[:,1:\
                                 (2*self.orbital_number[orb]+1+1)], axis=1)
-                        max_projections.append(np.max(y))
+                        max_projections.append(np.max(abs(y)))
                         ax.plot(x, y, label="{} {}".format(atom, orb),
                                 c=colour)
                     #Update colour count
                     colour_count += 1
 
             #Add total DOS too in black
-            ax.plot(self.dos[:,0] - self.fermi_energy, (-1)**(i) * \
+            if self.total_dos:
+                ax.plot(self.dos[:,0] - self.fermi_energy, (-1)**(i) * \
                     self.dos[:,i+1], 'k')
 
         #Set x-axis quantities
@@ -365,10 +364,8 @@ class DensityOfStates:
 
         #Set y-axis quantities
         ax.set_ylabel( self.ylabel )
-        if self.max_nspin != 2:
-            ax.set_ylim((0.0, self.ylim[1]))
-        else:
-            ax.set_ylim(self.ylim)
+        self.get_extrema_density_of_states()
+        ax.set_ylim(self.ylim)
 
         #Add vertical line for Fermi Energy
         ax.axvline(x=0.0, linewidth=1.0, c='k')
@@ -425,14 +422,6 @@ class DensityOfStates:
         ax.xaxis.set_minor_locator(MultipleLocator( self.x_minorticks ))
         ax.xaxis.set_major_formatter( self.x_major_tick_formatter )
         ax.set_xlabel( self.xlabel )
-
-        #Set DOS (y) axis quantities
-        if self.spin_polarised:
-            print('Spin polarised, {}'.format(self.ylim))
-            ax.set_ylim(self.ylim)
-        else:
-            print("Spin unpolarised")
-            ax.set_ylim((0.0,self.ylim[1]))
 
         #ax.yaxis.set_major_locator(MultipleLocator( self.y_majorticks ))
         #ax.yaxis.set_minor_locator(MultipleLocator( self.y_minorticks ))
