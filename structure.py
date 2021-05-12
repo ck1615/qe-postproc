@@ -91,8 +91,10 @@ class XML_Data:
         key_list = list(self.positions)
         key1, key2 = key_list[i1 - 1], key_list[i2 - 1]
 
-        return norm(np.array(self.positions[key1]) -\
-                np.array(self.positions[key2]))
+        return norm(
+                np.array(self.positions[key1]) - \
+                np.array(self.positions[key2])
+                )
 
 
     def get_angle(self,i1,i2,i3):
