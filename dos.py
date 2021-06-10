@@ -34,7 +34,7 @@ class DensityOfStates:
 
     def __init__(self, xmlname, dos_type='projected', figsize=10, ratio=0.6,
             emin=-10, emax=10, units='ase', full_energy_range=False,
-            max_nspin=2, savefig=True, angmom=True, total_dos=False):
+            max_nspin=2, savefig=True, angmom=False, total_dos=False):
 
         #xml filename and type of DoS desired
         self.xmlname = xmlname
@@ -330,7 +330,7 @@ class DensityOfStates:
                         for m in range(2 * self.orbital_number[orb]+1):
                             y = (-1)**(i) * pdosvals[:, m + 1]
                             #Append to maximum projectiosn
-                            self.get_extrema_density_of_states(y)
+                            self.get_extrema_density_of_states()
                             #Define labels
                             if orb == "s":
                                 label="{} {}".format(atom, orb)

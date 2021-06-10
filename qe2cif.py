@@ -2,6 +2,7 @@
 
 from ase.io import read, write
 import sys
+from findsymfile import findsym_wrap
 
 def main():
 
@@ -14,14 +15,17 @@ def main():
         cifname = fname.replace('.vc-relax.out', '.cif')
     elif '.scf.out' in fname:
         cifname = fname.replace('.scf.out', '.cif')
+    elif '.vc-relax.in' in fname:
+        cifname = fname.replace('.vc-relax.in', '.cif')
+    elif '.scf.in' in fname:
+        cifname = fname.replace('.scf.in', '.cif')
     else:
         NameError("The output file provided contains neither 'scf.out' nor"+\
                 " 'vc-relax.out', suggesting it is not an appropriate PWscf"+\
                 " output file.")
 
     write(cifname, read(fname))
-
-
+    #findsym_wrap(cifname, print_cif=True, axeso='abc', axesm='ab(c)')
 
 if __name__ == "__main__":
     main()
