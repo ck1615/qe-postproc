@@ -34,7 +34,8 @@ class DensityOfStates:
 
     def __init__(self, xmlname, dos_type='projected', figsize=10, ratio=0.6,
             emin=-10, emax=10, units='ase', full_energy_range=False,
-            max_nspin=2, savefig=True, angmom=False, total_dos=False):
+            max_nspin=2, savefig=True, angmom=False, total_dos=False, 
+            sum_atom_types=True):
 
         #xml filename and type of DoS desired
         self.xmlname = xmlname
@@ -45,6 +46,7 @@ class DensityOfStates:
         self.units = units
         self.savefig = savefig
         self.angmom = angmom
+        self.sum_atom_types = sum_atom_types
         self.total_dos = total_dos
         self.max_projections = []
 
@@ -131,10 +133,12 @@ class DensityOfStates:
         self.pdos = {'up': {}, 'down': {}}
 
         for fname in pdos_files:
+            #Get atom index -- used when not summing over atoms
+            atm_idx = int(fname.split('#')[1].split('(')[0])
             #Extract atom, orbital and raw data
             atom, orb, data = self.extract_pdos_data(fname)
             #Allocate data to self.pdos dictionary
-            self.allocate_pdos_arrays(atom, orb, data)
+            self.allocate_pdos_arrays(atom, orb, data, atm_idx)
 
         return None
 
@@ -172,41 +176,64 @@ class DensityOfStates:
         return atom, orb, data
 
 
-    def allocate_pdos_arrays(self, atom, orb, data):
+    def allocate_pdos_arrays(self, atom, orb, data, atm_idx):
         """
         This function takes the atom, orbital and the raw pos data and
         allocates and updates the dictionary of pdos values
         """
 
+
         if self.spin_polarised:
-            up_list = [0] + [3 + 2*m for m in range(2*self.orbital_number[orb] \
-                    + 1)]
-            dw_list = [0] + [4 + 2*m for m in range(2*self.orbital_number[orb] \
-                    + 1)]
-
-            if atom not in self.pdos['up']:
-                self.pdos['up'][atom] = {}
-                self.pdos['down'][atom] = {}
-
-            if orb not in self.pdos['up'][atom]:
-                self.pdos['up'][atom][orb] = data[:, up_list]
-                self.pdos['down'][atom][orb] = data[:, dw_list]
-            else:
-                #Only add to previous array the values of the pDOS(E) and
-                #not the energy array [:,0] as well
-                self.pdos['up'][atom][orb][:,1:] += data[:,up_list[1:]]
-                self.pdos['down'][atom][orb][:,1:] += data[:, dw_list[1:]]
-        else:
-            idx_list = [0] + [2 + m for m in range(2 * \
+            #List indices for pdos values
+            up_list = [0] + [3 + 2*m for m in range(2 * \
+                    self.orbital_number[orb] + 1)]
+            dw_list = [0] + [4 + 2*m for m in range(2 * \
                     self.orbital_number[orb] + 1)]
 
-            if atom not in self.pdos['up']:
-                self.pdos['up'][atom] = {}
+            #Summing over atoms
+            if self.sum_atom_types:
 
-            if orb not in self.pdos['up'][atom]:
-                self.pdos['up'][atom][orb] = data[:, idx_list]
+                #Add atom type to dictionary if not present
+                if atom not in self.pdos['up']:
+                    for sp in ['up', 'down']:
+                        self.pdos[sp][atom] = {}
+
+                if orb not in self.pdos['up'][atom]:
+                    self.pdos['up'][atom][orb] = data[:, up_list]
+                    self.pdos['down'][atom][orb] = data[:, dw_list]
+                else:
+                    #Only add to previous array the values of the pDOS(E) and
+                    #not the energy array [:,0] as well
+                    self.pdos['up'][atom][orb][:,1:] += data[:,up_list[1:]]
+                    self.pdos['down'][atom][orb][:,1:] += data[:, dw_list[1:]]
             else:
-                self.pdos['up'][atom][orb][:,1:] += data[:, idx_list[1:]]
+                #Add particular atom and its index
+                if (atom, atm_idx) not in self.pdos['up']:
+                    for sp in ['up', 'down']:
+                        self.pdos[sp][(atom, atm_idx)] = {}
+
+                self.pdos['up'][(atom, atm_idx)][orb] = data[:, up_list]
+                self.pdos['down'][(atom, atm_idx)][orb] = data[:, dw_list]
+
+        else:
+            #Index list for pdos values for a given orbital
+            idx_list = [0] + [2 + m for m in range(2 * \
+                        self.orbital_number[orb] + 1)]
+
+            if self.sum_atom_types:
+
+                if atom not in self.pdos['up']:
+                    self.pdos['up'][atom] = {}
+
+                if orb not in self.pdos['up'][atom]:
+                    self.pdos['up'][atom][orb] = data[:, idx_list]
+                else:
+                    self.pdos['up'][atom][orb][:,1:] += data[:, idx_list[1:]]
+            else:
+                if (atom, atm_idx) not in self.pdos['up']:
+                    for sp in ['up', 'down']:
+                        self.pdos[sp][(atom, atm_idx)] = {}
+                self.pdos['up'][(atom, atm_idx)][orb] = data[:, idx_list]
 
 
     def plot_dos(self):
@@ -290,6 +317,7 @@ class DensityOfStates:
         else:
             ymin = 0.0
         self.ylim = (ymin, ymax)
+
 
     def plot_projected_dos(self, total_dos=True):
         """

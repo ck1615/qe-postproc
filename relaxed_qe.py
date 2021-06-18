@@ -219,7 +219,11 @@ class QEOutput:
             idx_list = [1]
 
         for i in idx_list:
-            celldm_idx = strindex(self.input_lines, "celldm({})".format(i))
+            try:
+                celldm_idx = strindex(self.input_lines, "celldm({})".format(i))
+            except:
+                raise ValueError("Need spaces at either side of equal sign"+\
+                        " for cell dimensions.")
 
             old_celldm = self.input_lines[celldm_idx].partition("celldm({})".\
                     format(i))[-1].split()[1]

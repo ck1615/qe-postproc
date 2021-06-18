@@ -40,8 +40,8 @@ class BandStructure:
        self.xlim = (0,1)
        self.xlabel = 'Wavevectors'
        self.ylabel = r'$E - E_{\mathrm{Fermi}}$ / eV'
-       self.y_majorticks = 2.0
-       self.y_minorticks = 1.0
+       self.y_majorticks = 1.0
+       self.y_minorticks = 0.5
        self.y_major_tick_formatter = '{x:.0f}'
        self.ylim = (ymin, ymax)
 
@@ -404,7 +404,7 @@ def main():
     xmlname, kwargs = command_line_options()
 
     #Read XML data file and band structure stuff
-    BS = BandStructure(xmlname, figsize=6, ratio=0.5, ymin=-9, ymax=5)
+    BS = BandStructure(xmlname, figsize=6, ratio=0.5, ymin=-1, ymax=5)
     BS.get_highsym_data() #Get high-symmetry points data
     BS.plot_band_structure(save_pdf=True)
 

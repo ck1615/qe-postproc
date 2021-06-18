@@ -200,8 +200,11 @@ class XML_Data:
         #nat & ibrav
         self.nat = int(self.xmltree.find('./output/atomic_structure').\
                 attrib['nat'])
-        self.ibrav = int(self.xmltree.find('./output/atomic_structure').\
+        try:
+            self.ibrav = int(self.xmltree.find('./output/atomic_structure').\
                 attrib['bravais_index'])
+        except KeyError:
+            self.ibrav = 0.0
         self.alat = float(self.xmltree.find('./output/atomic_structure').\
                 attrib['alat']) * Bohr
 
