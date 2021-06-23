@@ -133,6 +133,7 @@ class XML_Data:
         """
         for r in self.xmltree.findall\
             ("./output/atomic_structure/atomic_positions/atom"):
+
             self.positions[(r.attrib['name'], int(r.attrib['index']))] = \
             [float(pos)*Bohr for pos in r.text.split()]
 
