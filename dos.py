@@ -6,12 +6,15 @@ densities of states in spin-polarised and unpolarised cases.
 
 colour_key_file = '/Users/christopherkeegan/.local/bin/qe-parser/colour.key'
 
-from structure import XML_Data
+#Parsing command line options
+import sys
+import getopt
 import numpy as np
 from glob import glob
 from misctools import strindex
 from ase.units import Hartree, Bohr
 import re
+from structure import XML_Data
 
 #Plotting
 from matplotlib import pyplot as plt
@@ -19,9 +22,6 @@ from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
 import matplotlib.colors as colors
 import matplotlib.cm as cm
 
-#Parsing command line options
-import sys
-import getopt
 
 markers = ["x", "+", "d", "1", '*']
 
@@ -33,7 +33,7 @@ class DensityOfStates:
     """
 
     def __init__(self, xmlname, dos_type='projected', figsize=10, ratio=0.6,
-            emin=-10, emax=10, units='ase', full_energy_range=False,
+            emin=-2, emax=4, units='ase', full_energy_range=False,
             max_nspin=2, savefig=True, angmom=False, total_dos=False, 
             sum_atom_types=True):
 
@@ -52,13 +52,14 @@ class DensityOfStates:
 
         #Total dos filename and array
         self.dos_fname = None
+        self.energies = None
         self.dos = None
         self.pdos = None
 
         #Projected DOS symbols
         self.orbital_number = {'s': 0, 'p': 1, 'd': 2, 'f':3}
         self.angmom_name = {'s': {0: ' '}, 'p': {0: 'z', 1: 'x',\
-                2: 'y'}, 'd': {0: "z^{2}", 1: 'zx', 2: 'zy', \
+                2: 'y'}, 'd': {0: "z^{2}", 1: 'xz', 2: 'yz', \
                 3: "x^{2} - y^{2}", 4: 'xy'}}
 
 
@@ -182,12 +183,15 @@ class DensityOfStates:
         allocates and updates the dictionary of pdos values
         """
 
+        #Allocate energy array (x-axis) if not allocated
+        if self.energies is None:
+            self.energies = data[:, 0]
 
         if self.spin_polarised:
             #List indices for pdos values
-            up_list = [0] + [3 + 2*m for m in range(2 * \
+            up_list = [3 + 2*m for m in range(2 * \
                     self.orbital_number[orb] + 1)]
-            dw_list = [0] + [4 + 2*m for m in range(2 * \
+            dw_list = [4 + 2*m for m in range(2 * \
                     self.orbital_number[orb] + 1)]
 
             #Summing over atoms
@@ -204,8 +208,9 @@ class DensityOfStates:
                 else:
                     #Only add to previous array the values of the pDOS(E) and
                     #not the energy array [:,0] as well
-                    self.pdos['up'][atom][orb][:,1:] += data[:,up_list[1:]]
-                    self.pdos['down'][atom][orb][:,1:] += data[:, dw_list[1:]]
+                    self.pdos['up'][atom][orb] += data[:, up_list]
+                    self.pdos['down'][atom][orb] += data[:, dw_list]
+
             else:
                 #Add particular atom and its index
                 if (atom, atm_idx) not in self.pdos['up']:
@@ -217,22 +222,22 @@ class DensityOfStates:
 
         else:
             #Index list for pdos values for a given orbital
-            idx_list = [0] + [2 + m for m in range(2 * \
+            idx_list = [2 + m for m in range(2 * \
                         self.orbital_number[orb] + 1)]
 
             if self.sum_atom_types:
-
                 if atom not in self.pdos['up']:
                     self.pdos['up'][atom] = {}
 
                 if orb not in self.pdos['up'][atom]:
                     self.pdos['up'][atom][orb] = data[:, idx_list]
                 else:
-                    self.pdos['up'][atom][orb][:,1:] += data[:, idx_list[1:]]
+                    self.pdos['up'][atom][orb] += data[:, idx_list]
+
             else:
                 if (atom, atm_idx) not in self.pdos['up']:
-                    for sp in ['up', 'down']:
-                        self.pdos[sp][(atom, atm_idx)] = {}
+                    self.pdos['up'][(atom, atm_idx)] = {}
+
                 self.pdos['up'][(atom, atm_idx)][orb] = data[:, idx_list]
 
 
@@ -290,14 +295,14 @@ class DensityOfStates:
         elif self.dos_type == 'projected':
                 try:
                     self.fermi_energy = float(self.Structure.bs_keywords\
-                            ['two_fermi_energies'].split()[-1]) * Hartree
+                            ['two_fermi_energies'].split()[0]) * Hartree
                 except KeyError:
                     try:
                         self.fermi_energy = float(self.Structure.bs_keywords\
-                            ['fermi_energy'].split()[-1]) * Hartree
+                            ['fermi_energy'].split()[0]) * Hartree
                     except KeyError:
                         self.fermi_energy = float(self.Structure.bs_keywords\
-                            ['highestOccupiedLevel'].split()[-1]) * Hartree
+                            ['highestOccupiedLevel'].split()[0]) * Hartree
         else:
             raise ValueError("{} value not recognised for type of DoS plot."+\
                     "Allowed values are: 'total' and 'projected'.")
@@ -346,16 +351,19 @@ class DensityOfStates:
         #Iterate over spin-channels
         for i, sp in enumerate(spin_channels):
             #Iterate over atomic species
-            colour_count = 1
             for atom in self.pdos[sp]:
+                if atom in ['Cu', 'La']:
+                    continue
                 #Iterate over orbitals
+
                 for orb, pdosvals in self.pdos[sp][atom].items():
                     #Get colour RBG format
-                    colour = scalar_map.to_rgba(colour_count)
+                    colour_count=1
                     x = pdosvals[:,0] - self.fermi_energy
                     if self.angmom and (orb != 'f'):
                         #Keep individual orbital angular momentum channels
                         for m in range(2 * self.orbital_number[orb]+1):
+                            colour = scalar_map.to_rgba(colour_count)
                             y = (-1)**(i) * pdosvals[:, m + 1]
                             #Append to maximum projectiosn
                             self.get_extrema_density_of_states()
@@ -367,7 +375,9 @@ class DensityOfStates:
                                         format(atom, orb , self.angmom_name[orb][m])
                             #Add channel to plot
                             ax.plot(x, y, label=label,
-                                    c=colour, marker=markers[m])
+                                    c=colour, linewidth=0.5)
+                            #Update colour count
+                            colour_count += 1
                     else:
                         #Sum over orbital angular momentum channels 
                         y = (-1) ** (i) * np.sum(pdosvals[:,1:\
@@ -375,13 +385,11 @@ class DensityOfStates:
                         max_projections.append(np.max(abs(y)))
                         ax.plot(x, y, label="{} {}".format(atom, orb),
                                 c=colour)
-                    #Update colour count
-                    colour_count += 1
 
             #Add total DOS too in black
             if self.total_dos:
                 ax.plot(self.dos[:,0] - self.fermi_energy, (-1)**(i) * \
-                    self.dos[:,i+1], 'k')
+                    self.dos[:,i+1], 'k', linewidth=0.4, alpha=0.5)
 
         #Set x-axis quantities
         #Get DOS maximum
@@ -393,7 +401,7 @@ class DensityOfStates:
         #Set y-axis quantities
         ax.set_ylabel( self.ylabel )
         self.get_extrema_density_of_states()
-        ax.set_ylim(self.ylim)
+        ax.set_ylim((-30,30))
 
         #Add vertical line for Fermi Energy
         ax.axvline(x=0.0, linewidth=1.0, c='k')

@@ -37,10 +37,6 @@ def get_cmdline_options():
             kwargs['calc_type'] = arg
             assert arg in pwscf_calctypes,\
             "Chosen calculation type: {}, is not one of the options for PWscf."
-        elif opt in ['-r', '--rotate-cell']:
-            kwargs['rotate'] = True
-        elif opt in ['-t', '--rotation-angle']:
-            kwargs['theta'] = float(arg)
         else:
             Warning("Calculation type not specified, we'll assume to use the"+\
                     "same as what was in the output file.")
@@ -126,41 +122,6 @@ class QEOutput:
         return relaxed_lines
 
 
-    def rotate_unit_cell(self):
-        """
-        This function rotates the unit cell and modifies the cell and positions
-        accordingly. This function returns the unit cell matrix in Bohr and
-        the atomic positions in crystal coordinates
-        """
-        #Convert to radians
-        assert self.theta != 0, "Angle is 0.0°, no rotation required."
-        t = self.theta * (180 / m.pi)
-
-        #Define (passive) transformation matrix
-        T = np.array([ [m.cos(t), m.sin(t), 0.0],
-            [-m.sin(t), m.cos(t), 0.0],
-            [0.0, 0.0, 1.0]
-            ])
-        assert abs(la.det(T) - 1) < self.tol, "Determinant of transformation "+\
-                "matrix is not unity: {}".format(la.det(T))
-
-        #Get unit cell and scaled positions
-        L = np.array(self.Atoms.cell)
-        P = np.array(self.Atoms.get_scaled_positions())
-
-        #Get rotated unit cell
-        L2 = np.matmul(L, np.transpose(T))
-        P2 = np.matmul(P, np.matmul(L, np.matmul(T, la.inv(L))))
-
-        assert abs(la.det(L2) - la.det(L)) < self.tol, "Determinant of unit "+\
-                "cell matrix is not conserved. Original: {}, Rotated: {}".\
-                format(la.det(L), la.det(L2))
-
-        assert la.norm(np.matmul(P2, L2) - np.matmul(P, L)) < self.tol, \
-                "Cartesian coordinates of atoms has changed via transformation."
-        return L2, P2
-
-
     def get_ibrav(self):
         if self.input_lines is None:
             self.get_input_lines()
@@ -169,37 +130,6 @@ class QEOutput:
         self.ibrav = int(self.input_lines[ibrav_idx].split()[2].strip(","))
 
         return None
-
-
-    def replace_rotated_lattice_params(self):
-
-        #Get positions of celldm()
-        celldm_ids = stri(self.input_lines, "celldm")
-
-        #Deep copy input lines to modify
-        input_lines = deepcopy(self.input_lines)
-
-        #Iterate through celldm indices, replace first occurrence and delete
-        #all others
-        for i, idx in enumerate(celldm_ids):
-            if i == 0:
-                input_lines[idx] = '  ibrav = 0\n'
-            else:
-                input_lines.pop(idx)
-
-        #Insert before ATOMIC_POSITIONS the new cell parameters
-        atom_pos_idx = strindex(input_lines, 'ATOMIC_POSITIONS')
-
-        input_lines.insert(atom_pos_idx, 'CELL_PARAMETERS bohr\n')
-        count=1
-        for v in self.celldms:
-            input_lines.insert(atom_pos_idx + count, \
-                    '{:.8f} {:.8f} {:.8f}\n'.format(v[0]/Bohr, v[1]/Bohr, \
-                    v[2]/Bohr))
-            count += 1
-        input_lines.insert(atom_pos_idx + count, '\n')
-
-        return input_lines
 
 
     def replace_lattice_params(self):
