@@ -400,12 +400,12 @@ def main():
     espresso software package) and outputs the band-structure
     """
 
-    #Get filename and any optional arguments
+    # Get filename and any optional arguments
     xmlname, kwargs = command_line_options()
 
-    #Read XML data file and band structure stuff
+    # Read XML data file and band structure stuff
     BS = BandStructure(xmlname, figsize=6, ratio=0.5, ymin=-1, ymax=5)
-    BS.get_highsym_data() #Get high-symmetry points data
+    BS.get_highsym_data()  # Get high-symmetry points data
     BS.plot_band_structure(save_pdf=True)
 
     return None
