@@ -19,13 +19,15 @@ def main():
         cifname = fname.replace('.vc-relax.in', '.cif')
     elif '.scf.in' in fname:
         cifname = fname.replace('.scf.in', '.cif')
+    elif '.relax.out' in fname:
+        cifname = fname.replace('.relax.out', '.cif')
     else:
         NameError("The output file provided contains neither 'scf.out' nor"+\
                 " 'vc-relax.out', suggesting it is not an appropriate PWscf"+\
                 " output file.")
 
     write(cifname, read(fname))
-    findsym_wrap(cifname, print_cif=True, axeso='abc', axesm='ab(c)')
+    #findsym_wrap(cifname, print_cif=True, axeso='abc', axesm='ab(c)')
 
 if __name__ == "__main__":
     main()

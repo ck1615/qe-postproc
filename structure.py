@@ -4,54 +4,54 @@ This file contains classes which contain the input and output structures from a
 quantum-espresso *name*.xml file.
 """
 
-#XML Parsing tools
+# XML Parsing tools
 import xml.etree.ElementTree as ET
 from misctools import strindex
 
-#Data structures and calculating auxiliary quantities
+# Data structures and calculating auxiliary quantities
 from ase.units import Bohr, Hartree
 import numpy as np
 from numpy.linalg import inv, norm
 
-#Font
+# Font
 #plt.rcParams.update({
 #    "text.usetex": True,
 #    "font.family": "serif",
 #    "font.sans-serif": ["Palatino"]})
 
+
 class XML_Data:
 
     def __init__(self, xmlname, units='ase'):
 
-        #Initialise file
+        # Initialise file
         self.xmlname = xmlname
         self.xmltree = ET.parse(self.xmlname)
 
-        #Units (ase: Å, eV, Pa, Hartree: Hartree, Bohr, ...)
+        # Units (ase: Å, eV, Pa, Hartree: Hartree, Bohr, ...)
         self.units = units
 
-        #Important keywords as attributes (ntyp, nat, ibrav)
+        # Important keywords as attributes (ntyp, nat, ibrav)
         self.ntyp = None
         self.nat = None
         self.ibrav = None
         self.alat = None
         self.nbnd = None
 
-        #Structural parameters (unit cell, atomic positions)
+        # Structural parameters (unit cell, atomic positions)
         self.cell = np.array([])
         self.positions = {}
         self.scaled_positions = {}
 
-        #Keywords
+        # Keywords
         self.keywords = {}
         self.xc = None
 
-        #K-points, KS energy eigenvalues
+        # K-points, KS energy eigenvalues
         self.k_points = {}
 
-        #Get data
+        # Get data
         self.get_xml_data()
-
 
     def get_xml_data(self):
         """
@@ -69,6 +69,7 @@ class XML_Data:
         self.get_bands_keywords()
         self.get_magnetisation_data()
         self.get_band_structure_keywords()
+        self.get_energies()
 
         #Get number of bands
         try:
@@ -81,7 +82,6 @@ class XML_Data:
 
         #Get KS eigenvalues
         self.get_kpoint_eigenvalues()
-
 
     def get_distance(self, i1, i2):
         """
@@ -96,7 +96,6 @@ class XML_Data:
                 np.array(self.positions[key2])
                 )
 
-
     def get_angle(self,i1,i2,i3):
         """
         This function returns the angle between the atoms with indices i1, i2
@@ -106,7 +105,6 @@ class XML_Data:
         The third index can also be one of x, y, z, xy, yz, xz and the angle
         will be computed between the vector i2 - i1 and the corresponding axis
         specified by i3. In this case, i3 is a string.
-
         """
         key1, key2 = list(self.positions)[i1 - 1], list(self.positions)[i2 - 1]
         vec1 = np.array(self.positions[key2]) - np.array(self.positions[key1])
@@ -124,7 +122,6 @@ class XML_Data:
         return (180 / np.pi) * np.arccos(vec1.dot(vec2) / \
                 (norm(vec1) * norm(vec2)))
 
-
     def get_positions(self):
         """
         Get indexed element symbols and their absolute positions in Cartesian
@@ -136,7 +133,6 @@ class XML_Data:
 
             self.positions[(r.attrib['name'], int(r.attrib['index']))] = \
             [float(pos)*Bohr for pos in r.text.split()]
-
 
     def get_cell(self):
         """
@@ -160,7 +156,6 @@ class XML_Data:
                 in r.text.split()])
         self.recip_cell_xml = np.array(self.recip_cell_xml)
 
-
     def get_scaled_positions(self):
         """
         Get atomic positions in crystal coordinates.
@@ -176,7 +171,6 @@ class XML_Data:
             self.scaled_positions[key] = np.matmul(self.positions[key], inv(\
                 np.transpose(self.cell)))
 
-
     def get_control_variables(self):
         """
         Get control variables for this calculations
@@ -184,7 +178,6 @@ class XML_Data:
 
         self.control_variables = {r.tag: r.text for r in self.xmltree.findall(\
                 './input/control_variables/*')}
-
 
     def get_system_variables(self):
         """
@@ -209,7 +202,6 @@ class XML_Data:
         self.alat = float(self.xmltree.find('./output/atomic_structure').\
                 attrib['alat']) * Bohr
 
-
     def get_xc_functional(self):
         """
         Get the XC functional used.
@@ -219,7 +211,6 @@ class XML_Data:
 
         if self.xc in xc_dict:
             self.xc = xc_dict[self.xc]
-
 
     def get_bands_keywords(self):
         """
@@ -231,7 +222,6 @@ class XML_Data:
         self.bands_keywords = {r.tag: r.text for r in self.xmltree.findall(\
                 './input/bands/*')}
 
-
     def get_magnetisation_data(self):
         """
         Get data relating to the magnetization tag:
@@ -241,7 +231,6 @@ class XML_Data:
         self.magnetisation_keywords = {r.tag: r.text for r in self.xmltree.findall(\
                 './output/magnetization/*')}
 
-
     def get_energies(self):
         """
         Get total energy and all its contributions (etot, eband, ehart,
@@ -250,7 +239,6 @@ class XML_Data:
 
         self.total_energies = {r.tag: float(r.text)*Hartree for r in self.\
                 xmltree.findall('./output/total_energy/*')}
-
 
     def get_band_structure_keywords(self):
         """
@@ -262,7 +250,6 @@ class XML_Data:
                 break
             else:
                 self.bs_keywords[r.tag] = r.text
-
 
     def get_spin_splitting(self):
         """
@@ -280,7 +267,6 @@ class XML_Data:
                 self.eigvals[:, self.nbnd:])
         self.mean_spin_splitting = np.sum(eigval_diff) / eigval_diff.size
         self.max_spin_splitting = np.max(eigval_diff)
-
 
     def compute_band_gap(self):
         """
@@ -303,7 +289,6 @@ class XML_Data:
             else:
                 KeyError("lowestUnoccupiedLevel not present since not enough"+\
                         " bands were used. Cannot compute band gap.")
-
 
     def get_kpoint_eigenvalues(self):
         """
@@ -368,7 +353,6 @@ class XML_Data:
         self.get_fermi_energy()
         self.eigvals -= self.fermi_energy[0]
 
-
     def get_fermi_energy(self):
         """
         This function extracts the Fermi energy / energies, but uses the
@@ -390,7 +374,6 @@ class XML_Data:
                 fermi_kw = 'two_fermi_energies'
                 self.fermi_energy = [float(ef) * Hartree for ef in self.\
                         bs_keywords[fermi_kw].split()]
-
 
     def measure_rumpling(self, i1, i2):
         """

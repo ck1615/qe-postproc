@@ -22,47 +22,49 @@ class BandStructure:
     """
 
     def __init__(self, xmlname, figsize=6, ratio=0.8, ymin=-9, ymax=5,
-            units='ase'):
-       #self.tolerance:
-       self.tol = 1e-10
-       #Instantiate outer class XML_Data in the inner class 
-       self.Structure = XML_Data(xmlname, units=units)
-       self.bands_inputfile = self.Structure.xmlname.replace('xml',\
-               'bands.in')
+                 units='ase'):
+        # self.tolerance:
+        self.tol = 1e-10
+        # Instantiate outer class XML_Data in the inner class
+        self.Structure = XML_Data(xmlname, units=units)
+        self.bands_inputfile = self.Structure.xmlname.replace('xml',
+                                                              'bands.in')
 
-       #Plot characteristics
-       self.ratio = ratio
-       self.figsize = figsize
-       self.spin_down_colour = ':ro'
-       self.spin_up_colour = '--bo'
-       self.markersize = self.figsize / 8
-       self.linewidth = self.markersize / 3
-       self.xlim = (0,1)
-       self.xlabel = 'Wavevectors'
-       self.ylabel = r'$E - E_{\mathrm{Fermi}}$ / eV'
-       self.y_majorticks = 1.0
-       self.y_minorticks = 0.5
-       self.y_major_tick_formatter = '{x:.0f}'
-       self.ylim = (ymin, ymax)
+        # Plot characteristics
+        self.ratio = ratio
+        self.figsize = figsize
+        self.spin_down_colour = ':ro'
+        self.spin_up_colour = '--bo'
+        self.markersize = self.figsize / 8
+        self.linewidth = self.markersize / 3
+        self.xlim = (0, 1)
+        self.xlabel = 'Wavevectors'
+        self.ylabel = r'$E - E_{\mathrm{Fermi}}$ / eV'
+        self.y_majorticks = 1.0
+        self.y_minorticks = 0.5
+        self.y_major_tick_formatter = '{x:.0f}'
+        self.ylim = (ymin, ymax)
 
-       #Band gap characteristics
-       self.HO = None
-       self.LU = None
-       self.band_gap = None
-       self.nocc = int(np.ceil(float(self.Structure.bs_keywords['nelec'])/2))
+        # Band gap characteristics
+        self.HO = None
+        self.LU = None
+        self.band_gap = None
+        self.nocc = int(np.ceil(float(self.Structure.bs_keywords['nelec'])/2))
 
-       #Bands and path related variables
-       self.kpath_idx = []   #Indices from 0.0 to 1.0 of k-points
-       self.path = None
-       self.path_ticks = None
-       self.labels = []
-       self.fermi_energy = self.Structure.fermi_energy[0]
+        # Bands and path related variables
+        self.kpath_idx = []   # Indices from 0.0 to 1.0 of k-points
+        self.path = None
+        self.path_ticks = None
+        self.labels = []
+        self.fermi_energy = self.Structure.fermi_energy[0]
 
-       #Change rc params
-       plt.rcParams['axes.labelsize'] = 2*self.figsize
-       plt.rcParams['xtick.bottom'] = False
-       plt.rcParams['font.size'] = 2*self.figsize
+        # Change rc params
+        plt.rcParams['axes.labelsize'] = 2*self.figsize
+        plt.rcParams['xtick.bottom'] = False
+        plt.rcParams['font.size'] = 2*self.figsize
 
+        # Get data
+        self.get_highsym_data()
 
     def get_highsym_data(self):
         """
@@ -73,11 +75,11 @@ class BandStructure:
         self.get_highsym_kpoints()
         self.get_highsym_ticks()
 
-        #Get band gap
+        # Get band gap
         self.get_band_gap()
         self.get_klocs_band_gap()
-        return None
 
+        return None
 
     def get_kpath_indices(self):
         """
@@ -91,12 +93,11 @@ class BandStructure:
                 path.append(0.0)
             else:
                 path.append(path[i-1] + norm(kpt - \
-                        self.Structure.k_points['cartesian'][i-1]))
+                            self.Structure.k_points['cartesian'][i-1]))
 
-        #Normalise list between 0.0 and 1.0
+        # Normalise list between 0.0 and 1.0
         self.kpath_idx = [(idx - path[0]) / (path[-1] - path[0]) for idx \
-                in path]
-
+                          in path]
 
     def get_highsym_kpoints(self):
         """
@@ -118,7 +119,6 @@ class BandStructure:
         #Get symbols for high-symmetry points
         self.get_highsym_symbols(start_idx, end_idx)
 
-
     def get_highsym_symbols(self, start_idx, end_idx):
         """
         Gets the symbols of the high-symmetry points if present
@@ -138,7 +138,6 @@ class BandStructure:
             else:
                 self.labels.append(tuple(self.path[i]))
 
-
     def get_plottable_symbol(self, symbol):
         """
         This function takes the raw capitalised symbol and returns the
@@ -150,7 +149,6 @@ class BandStructure:
             return bands_input_symbols[symbol]
         else:
             return symbol
-
 
     def get_highsym_ticks(self):
         """
@@ -185,7 +183,6 @@ class BandStructure:
                     self.path_ticks[ip + 1] = self.kpath_idx[ik]
                     break
 
-
     def get_band_gap(self):
         """
         This function computes the band gap of the structure
@@ -211,7 +208,6 @@ class BandStructure:
         #Smearing case
         else:
             self.compute_band_gap()
-
 
     def compute_band_gap(self):
         """
@@ -239,7 +235,6 @@ class BandStructure:
             self.LU = self.Structure.eigvals[:,self.nocc].min()
             #Get band gap
             self.band_gap = max(self.LU - self.HO, 0.0)
-
 
     def get_klocs_band_gap(self, tol=1e-4):
         """
@@ -269,28 +264,27 @@ class BandStructure:
                 abs(self.Structure.eigvals[:, self.nocc] - self.LU) < tol
                 )[0]
 
-
     def plot_band_structure(self, save_pdf=True):
         """
         This function plots the band structure
         """
 
-        #Start plot
+        # Start plot
         fig, ax = plt.subplots(figsize=(self.figsize*self.ratio, self.figsize))
-        #Spin polarised case
+        # Spin polarised case
         if self.Structure.bs_keywords['lsda'] == 'true':
             ax.plot(
                     self.kpath_idx,
-                    self.Structure.eigvals[:,:\
-                            int(self.Structure.bs_keywords['nbnd_up'])],
+                    self.Structure.eigvals[:, :int(self.Structure.
+                                           bs_keywords['nbnd_up'])],
                     self.spin_up_colour, label='Spin up',
                     linewidth=self.linewidth,
                     markersize=self.markersize
                     )
             ax.plot(
                     self.kpath_idx,
-                    self.Structure.eigvals[:,\
-                            int(self.Structure.bs_keywords['nbnd_dw']):],
+                    self.Structure.eigvals[:, int(self.Structure.
+                                           bs_keywords['nbnd_dw']):],
                     self.spin_down_colour,
                     label='Spin down',
                     linewidth=self.linewidth,
@@ -306,15 +300,15 @@ class BandStructure:
                     markersize=self.markersize
                     )
 
-        #Set energy (y) axis quantities
-        ax.set_ylim( self.ylim )
-        ax.yaxis.set_major_locator(MultipleLocator( self.y_majorticks ))
+        # Set energy (y) axis quantities
+        ax.set_ylim(self.ylim)
+        ax.yaxis.set_major_locator(MultipleLocator(self.y_majorticks))
         ax.yaxis.set_major_formatter(self.y_major_tick_formatter)
-        ax.yaxis.set_minor_locator(MultipleLocator( self.y_minorticks ))
-        ax.set_ylabel( self.ylabel )
+        ax.yaxis.set_minor_locator(MultipleLocator(self.y_minorticks))
+        ax.set_ylabel(self.ylabel)
 
-        #Set high-symmetry point quantities
-        ax.set_xlim((0.0,1.0))
+        # Set high-symmetry point quantities
+        ax.set_xlim((0.0, 1.0))
         ax.set_xticks(self.path_ticks)
         ax.set_xticklabels(
                 self.labels,
@@ -322,21 +316,21 @@ class BandStructure:
                 fontsize=self.figsize * 2
                 )
 
-        #Plot vertical lines at each high-symmetry point
+        # Plot vertical lines at each high-symmetry point
         for i, t in enumerate(self.path_ticks):
             ax.axvline(x=t, c='k', linewidth=self.linewidth)
 
-        #Plot horizontal line at the origin (Fermi energy)
+        # Plot horizontal line at the origin (Fermi energy)
         ax.axhline(y=0.0, c='k', linestyle='--', linewidth=self.linewidth)
 
-        #Locations of the LU points
+        # Locations of the LU points
         lu_indices = []
 
-        #Plot additions for insulating band structure
+        # Plot additions for insulating band structure
         if (self.band_gap is not None) and (self.band_gap > 0.0):
-            #Coloured in section of gap
+            # Coloured in section of gap
             ax.axhspan(self.HO, self.LU, alpha=0.3, color='green')
-            #Positions of HO & LU k-points
+            # Positions of HO & LU k-points
             for ho_idx in self.kpt_idx_HO:
                 ax.plot(self.kpath_idx[ho_idx], self.HO, 'ko',
                         ms=self.markersize * 4)
@@ -348,7 +342,7 @@ class BandStructure:
 
                 ax.plot(lu_loc, self.LU, 'ko', ms=self.markersize*4)
 
-            #If empty sequence
+            # If empty sequence
             if len(lu_indices) == 1:
                 lu_idx = lu_indices[0]
             else:
@@ -356,7 +350,7 @@ class BandStructure:
                     lu_indices.remove(0.0)
                 lu_idx = min(lu_indices)
 
-            #Double arrow indicating band gap
+            # Double arrow indicating band gap
             plt.arrow(
                     lu_idx,
                     self.HO,
@@ -379,14 +373,13 @@ class BandStructure:
                     head_width=0.01,
                     head_length=0.08,
                     )
-            #Positions of band gap mention
+            # Positions of band gap mention
             x_bg = lu_idx + 0.04
             y_bg = 0.5 * (self.HO + self.LU)
             plt.text(x_bg, y_bg, "{:1.2f} eV".format(self.band_gap),
-                    va='center', fontsize=1.6*self.figsize)
+                     va='center', fontsize=1.6*self.figsize)
 
-
-        #Save figure
+        # Save figure
         if save_pdf:
             fig.tight_layout()
             fig.savefig(self.Structure.xmlname.replace('xml', 'pdf'))
@@ -404,26 +397,26 @@ def main():
     xmlname, kwargs = command_line_options()
 
     # Read XML data file and band structure stuff
-    BS = BandStructure(xmlname, figsize=6, ratio=0.5, ymin=-1, ymax=5)
-    BS.get_highsym_data()  # Get high-symmetry points data
+    BS = BandStructure(xmlname, figsize=6, ratio=0.5, ymin=-4, ymax=5)
     BS.plot_band_structure(save_pdf=True)
 
     return None
+
 
 def command_line_options():
     """
     This function parses the command line options to get the filename.
     """
 
-    #Get filename
+    # Get filename
     try:
         xmlname = sys.argv[1]
     except IndexError:
         raise IndexError("No filename has been provided.")
-    #Other arguments
+    # Other arguments
     argv = sys.argv[2:]
 
-    #Iterate through options
+    # Iterate through options
     kwargs = {}
     opts, args = getopt.getopt(argv, "s:w:f:")
     for opt, arg in opts:

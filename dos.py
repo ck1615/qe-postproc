@@ -3,10 +3,7 @@
 This file contains classes and methods to plot (i) total and (ii) projected
 densities of states in spin-polarised and unpolarised cases.
 """
-
-colour_key_file = '/Users/christopherkeegan/.local/bin/qe-parser/colour.key'
-
-#Parsing command line options
+# Parsing command line options
 import sys
 import getopt
 import numpy as np
@@ -16,12 +13,14 @@ from ase.units import Hartree, Bohr
 import re
 from structure import XML_Data
 
-#Plotting
+# Plotting
 from matplotlib import pyplot as plt
-from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
+from matplotlib.ticker import MultipleLocator
 import matplotlib.colors as colors
 import matplotlib.cm as cm
 
+
+colour_key_file = '/Users/christopherkeegan/.local/bin/qe-parser/colour.key'
 
 markers = ["x", "+", "d", "1", '*']
 
@@ -35,7 +34,7 @@ class DensityOfStates:
     def __init__(self, xmlname, dos_type='projected', figsize=10, ratio=0.6,
             emin=-2, emax=4, units='ase', full_energy_range=False,
             max_nspin=2, savefig=True, angmom=False, total_dos=False, 
-            sum_atom_types=True):
+            sum_atom_types=True, spin_polarised=True):
 
         #xml filename and type of DoS desired
         self.xmlname = xmlname
@@ -50,20 +49,19 @@ class DensityOfStates:
         self.total_dos = total_dos
         self.max_projections = []
 
-        #Total dos filename and array
+        # Total dos filename and array
         self.dos_fname = None
         self.energies = None
         self.dos = None
         self.pdos = None
 
-        #Projected DOS symbols
-        self.orbital_number = {'s': 0, 'p': 1, 'd': 2, 'f':3}
-        self.angmom_name = {'s': {0: ' '}, 'p': {0: 'z', 1: 'x',\
-                2: 'y'}, 'd': {0: "z^{2}", 1: 'xz', 2: 'yz', \
-                3: "x^{2} - y^{2}", 4: 'xy'}}
+        # Projected DOS symbols
+        self.orbital_number = {'s': 0, 'p': 1, 'd': 2, 'f': 3}
+        self.angmom_name = {'s': {0: ' '}, 'p': {0: 'z', 1: 'x',
+                            2: 'y'}, 'd': {0: "z^{2}", 1: 'xz', 2: 'yz',
+                            3: "x^{2} - y^{2}", 4: 'xy'}}
 
-
-        #Plot characteristics
+        # Plot characteristics
         self.ratio = ratio
         self.figsize = figsize
         self.spin_down_colour = 'r'
@@ -78,12 +76,12 @@ class DensityOfStates:
         self.y_major_tick_formatter = '{x:.0f}'
         self.ylabel = 'Density of States'
 
-        #Whether plotting full energy range or not
+        # Whether plotting full energy range or not
         self.full_energy_range = full_energy_range
 
-        #XML data
-        self.Structure = XML_Data(xmlname, units=self.units)
-        #Change rc params
+        # XML data
+        self.Structure = XML_Data(self.xmlname, units=self.units)
+        # Change rc params
         plt.rcParams['axes.labelsize'] = 2*self.figsize
         plt.rcParams['font.size'] = 2*self.figsize
         plt.rcParams['xtick.major.size'] = 0.7*self.figsize
@@ -91,10 +89,10 @@ class DensityOfStates:
         plt.rcParams['ytick.major.size'] = 0.7*self.figsize
         plt.rcParams['ytick.minor.size'] = 0.4*self.figsize
 
-        #Determine spin-polarisation
+        # Determine spin-polarisation
         self.spin_polarised = None
         self.get_spin_polarisation()
-        #Maximum number of spin channels to plot
+        # Maximum number of spin channels to plot
         if self.spin_polarised:
             self.max_nspin = max_nspin
         else:
@@ -102,7 +100,6 @@ class DensityOfStates:
 
         #Get Fermi Energy
         self.get_fermi_energy()
-
 
     def read_data_files(self):
         """
@@ -122,27 +119,25 @@ class DensityOfStates:
                     " plot desired is wrong. Allowed values: total and"+\
                     " projected.")
 
-
     def read_pdos_files(self):
         """
         This function reads the projected DOS files
         """
-        #Get files:
+        # Get files:
         pdos_files = glob('{}.pdos_atm*'.format(self.xmlname.strip('.xml')))
 
-        #Initiate pdos data dictionary in spin-polarised and unpolarised cases
+        # Initiate pdos data dictionary in spin-polarised and unpolarised cases
         self.pdos = {'up': {}, 'down': {}}
 
         for fname in pdos_files:
-            #Get atom index -- used when not summing over atoms
+            # Get atom index -- used when not summing over atoms
             atm_idx = int(fname.split('#')[1].split('(')[0])
-            #Extract atom, orbital and raw data
+            # Extract atom, orbital and raw data
             atom, orb, data = self.extract_pdos_data(fname)
-            #Allocate data to self.pdos dictionary
+            # Allocate data to self.pdos dictionary
             self.allocate_pdos_arrays(atom, orb, data, atm_idx)
 
         return None
-
 
     def allocate_colours(self, atom, orb):
         """
@@ -157,11 +152,10 @@ class DensityOfStates:
             self.orbital_colour[atom][orb] = self.colours[self.colour_count]
             self.colour_count += 1
 
-
     def extract_pdos_data(self, fname):
 
-        #Extract data and place in dictionary
-        #Get locations of parentheses around atom and orbital name in filename
+        # Extract data and place in dictionary
+        # Get locations of parentheses around atom and orbital name in filename
         ls = [int(m.start()+1) for m in re.finditer('\(', fname)]
         rs = [int(m.start()) for m in re.finditer('\)', fname)]
         assert len(ls) == len(rs) == 2, "Number of parentheses not the same"
@@ -175,7 +169,6 @@ class DensityOfStates:
         #Load data
         data = np.loadtxt(fname)
         return atom, orb, data
-
 
     def allocate_pdos_arrays(self, atom, orb, data, atm_idx):
         """
@@ -240,15 +233,16 @@ class DensityOfStates:
 
                 self.pdos['up'][(atom, atm_idx)][orb] = data[:, idx_list]
 
-
     def plot_dos(self):
         """
         This function extracts all the data and plots the  total or projected
         density of states
         """
-        #Read the data files
+        # Read the data files
         self.read_data_files()
-        #Plot the DOS
+        # Read .xml data file and extract relevant quantities (spin polarisa-
+        # -tion and Fermi energy)
+        # Plot the DOS
         if self.dos_type == 'total':
             self.plot_total_dos()
         elif self.dos_type == 'projected':
@@ -259,14 +253,12 @@ class DensityOfStates:
                     "values are: 'total' and 'projected'.".\
                     format(self.dos_type))
 
-
     def get_spin_polarisation(self):
 
         if (self.Structure.bs_keywords['lsda'] == 'true'):
             self.spin_polarised = True
         else:
             self.spin_polarised = False
-
 
     def read_dos_file(self):
         """
@@ -278,7 +270,6 @@ class DensityOfStates:
         except FileNotFoundError:
             raise FileNotFoundError("The total dos file {} was not found".\
                     format(self.dos_fname))
-
 
     def get_fermi_energy(self):
         """
@@ -307,14 +298,15 @@ class DensityOfStates:
             raise ValueError("{} value not recognised for type of DoS plot."+\
                     "Allowed values are: 'total' and 'projected'.")
 
-
     def get_extrema_density_of_states(self):
+        """
+        This finds the minimum and maximum values for the Density of States
+        """
 
-
-        idx_min = np.where(self.dos[:,0] > self.fermi_energy + \
-                self.xlim[0])[0][0]
-        idx_max = np.where(self.dos[:,0] < self.fermi_energy + \
-                self.xlim[1])[0][-1]
+        idx_min = np.where(self.dos[:, 0] > self.fermi_energy +
+                           self.xlim[0])[0][0]
+        idx_max = np.where(self.dos[:, 0] < self.fermi_energy +
+                           self.xlim[1])[0][-1]
 
         ymax = self.dos[idx_min: idx_max + 1, 1].max()
         if self.max_nspin == 2:
@@ -322,7 +314,6 @@ class DensityOfStates:
         else:
             ymin = 0.0
         self.ylim = (ymin, ymax)
-
 
     def plot_projected_dos(self, total_dos=True):
         """
@@ -413,7 +404,6 @@ class DensityOfStates:
         plt.tight_layout()
         plt.savefig(self.xmlname.replace('.xml','_pdos.pdf'))
 
-
     def plot_total_dos(self, savefig=True):
         """
         This function plots the total electronic density of states.
@@ -474,10 +464,10 @@ def main():
     This main function reads a xml output file generated by PWscf (quantum-
     espresso software package) and outputs the band-structure
     """
-    #Get filename and any optional arguments
+    # Get filename and any optional arguments
     xmlname, kwargs = command_line_options()
 
-    #Plot DOS
+    # Plot DOS
     DOS = DensityOfStates(xmlname, **kwargs)
     DOS.plot_dos()
 
@@ -489,15 +479,15 @@ def command_line_options():
     This function parses the command line options to get the filename.
     """
 
-    #Get filename
+    # Get filename
     try:
         xmlname = sys.argv[1]
     except IndexError:
         raise IndexError("No filename has been provided.")
-    #Other arguments
+    # Other arguments
     argv = sys.argv[2:]
 
-    #Iterate through options
+    # Iterate through options
     kwargs = {}
     opts, args = getopt.getopt(argv, "t:f:r:s:m:l:u:")
     for opt, arg in opts:
@@ -510,14 +500,13 @@ def command_line_options():
         elif opt in ['-s', '--number-spin-channels']:
             kwargs['max_nspin'] = int(arg)
         elif opt in ['-m', '--m-projection']:
-            assert arg in ['0', '1'], "Angular momentum option has to be "+\
+            assert arg in ['0', '1'], "Angular momentum option has to be " +\
                     " either 0 (False) or 1 (True)."
             kwargs['angmom'] = bool(int(arg))
         elif opt in ['-l', '--lower-energy-bound']:
             kwargs['emin'] = float(arg)
         elif opt in ['-u', '--upper-energy-bound']:
             kwargs['emax'] = float(arg)
-
 
     return xmlname, kwargs
 

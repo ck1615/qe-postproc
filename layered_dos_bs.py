@@ -60,6 +60,12 @@ def get_data(fname, element, calculation, xlim=(-8, 4), angmom=True,
 
     spread = xlim[1] - xlim[0]
 
+    # Name
+    if calculation == 'lesco':
+        plotname = "LESCO"
+    elif calculation == 'CuU_9':
+        plotname == "La2CuO4_9.4"
+
     majorloc = round(spread / 10, 1)
     if majorloc >= 1:
         majorloc = round(majorloc, 0)
@@ -141,17 +147,17 @@ def get_data(fname, element, calculation, xlim=(-8, 4), angmom=True,
         plt.legend(by_label.values(), by_label.keys(), fontsize='xx-small',
                    ncol=2)
         plt.tight_layout()
-        plt.savefig('La2CuO4_{}_Rotated_pdos_{}_layer{}.pdf'.format(phase,
+        plt.savefig('{}_{}_Rotated_pdos_{}_layer{}.pdf'.format(plotname, phase,
                     element, layer))
 
 
 def main():
     """Get filename"""
 
-    #Get filename and any optional arguments
+    # Get filename and any optional arguments
     xmlname, element, calculation, kwargs = command_line_options()
 
-    #Plot
+    # Plot
     get_data(xmlname, element, calculation, **kwargs)
 
     return None
@@ -162,7 +168,7 @@ def command_line_options():
     This function parses the command line options to get the filename.
     """
 
-    #Get filename
+    # Get filename
     try:
         xmlname = sys.argv[1]
     except IndexError:
