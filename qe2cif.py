@@ -27,7 +27,7 @@ def main():
                 " output file.")
 
     write(cifname, read(fname))
-    #findsym_wrap(cifname, print_cif=True, axeso='abc', axesm='ab(c)')
+    findsym_wrap(cifname, print_cif=True, axeso='abc', axesm='ab(c)')
 
 if __name__ == "__main__":
     main()
