@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from misctools import strindex
 
 # Data structures and calculating auxiliary quantities
-from ase.units import Bohr, Hartree
+from ase.units import Bohr, Hartree, Pascal
 import numpy as np
 from numpy.linalg import inv, norm
 
@@ -70,6 +70,8 @@ class XML_Data:
         self.get_magnetisation_data()
         self.get_band_structure_keywords()
         self.get_energies()
+        self.get_forces()
+        self.get_stress()
 
         #Get number of bands
         try:
@@ -384,6 +386,40 @@ class XML_Data:
         key1, key2 = list(self.positions)[i1 - 1], list(self.positions)[i2 - 1]
 
         return self.positions[key1][2] - self.positions[key2][2]
+
+    def get_forces(self):
+        """
+        Returns the forces on the final structure.
+        """
+        #Unit conversion
+        if self.units == 'Hartree':
+            conv = 1
+        elif self.units == 'ase':
+            conv = Hartree / Bohr
+        else:
+            conv = 1
+
+        self.forces = np.array([[float(forc) for forc in r.text.split()]
+                               for r in self.xmltree.findall('./output/forces')
+                                ]).reshape(-1, 3) * conv
+
+    def get_stress(self):
+        """
+        Returns the stresses on the final lattice.
+        """
+
+        #Unit conversion
+        if self.units == 'Hartree':
+            conv = 1
+        elif self.units == 'ase':
+            conv = (Hartree / Bohr ** 3) / (1e6 * Pascal)
+        else:
+            conv = 1
+
+        self.stresses = np.array([[float(s) for s in r.text.split()]
+                                 for r in self.xmltree.\
+                                 findall('./output/stress')]).\
+                                 reshape(-1, 3) * conv
 
 def main():
     return None
