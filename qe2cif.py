@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-
+"""
+To use: 
+    qe2cif.py filename [-s]
+"""
 from ase.io import read, write
 import sys
 from findsymfile import findsym_wrap
