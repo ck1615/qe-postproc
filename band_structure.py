@@ -109,7 +109,7 @@ class BandStructure:
             self.input_lines = f.readlines()
 
         #Get start and end indices
-        start_idx = strindex(self.input_lines, "K_POINTS crystal")
+        start_idx = strindex(self.input_lines, "K_POINTS crystal_b")
         end_idx = strindex(self.input_lines, "ATOMIC_POSITIONS")
 
         #Extract path in crystal coordinates and symbols if present
@@ -161,9 +161,16 @@ class BandStructure:
 
         #Ensure first and last high-symmetry point correspond with start
         #and end of k-point list
-        assert norm(self.path[0] - self.Structure.k_points['crystal'][0]) <\
-        self.tol and norm(self.path[-1] - self.Structure.k_points['crystal']\
-                [-1]) < self.tol, "Initial and final are not what is expected"
+        init_diff = norm(self.path[0] - self.Structure.k_points['crystal'][0]) 
+        final_diff = norm(self.path[-1] - self.Structure.k_points['crystal'][-1])
+
+        #print("initial %1.3f and final %1.3f" % (init_diff, final_diff))
+        #print(self.path[0],self.Structure.k_points['crystal'][0])
+        #print(self.path[-1],self.Structure.k_points['crystal'][-1])
+
+        assert init_diff < self.tol and final_diff < self.tol,\
+        "Initial and final are not what is expected:" #+\
+        #"initial %1.3f and final %1.3f" % (init_diff, final_diff)
 
         #Set the values of the first and last ticks
         self.path_ticks[0] = 0.0
@@ -250,7 +257,7 @@ class BandStructure:
                     self.Structure.eigvals[:, self.nocc - 1 + \
                             self.Structure.nbnd]) < tol))
             self.kpt_idx_LU = np.append(np.where(
-                abs(self.Structure.eigvals[:, self.nocc] - self.LU) < tol
+                abs(self.Structure.eigvals[:, self.nocc] - self.LU) < tol/10
                 ), np.where(abs(
                     self.Structure.eigvals[:, self.nocc + \
                             self.Structure.nbnd]) < tol))
