@@ -21,7 +21,7 @@ class BandStructure:
     plot
     """
 
-    def __init__(self, xmlname, figsize=6, ratio=0.8, ymin=-9, ymax=5,
+    def __init__(self, xmlname, figsize=6, ratio=0.9, ymin=-1.5, ymax=5,
                  units='ase'):
         # self.tolerance:
         self.tol = 1e-10
@@ -29,6 +29,8 @@ class BandStructure:
         self.Structure = XML_Data(xmlname, units=units)
         self.bands_inputfile = self.Structure.xmlname.replace('xml',
                                                               'bands.in')
+        self.thdir =\
+        '/Users/christopherkeegan/iCloud/Documents/PhD-Thesis/chapter6'
 
         # Plot characteristics
         self.ratio = ratio
@@ -44,6 +46,7 @@ class BandStructure:
         self.y_minorticks = 0.5
         self.y_major_tick_formatter = '{x:.0f}'
         self.ylim = (ymin, ymax)
+        print(self.ylim)
 
         # Band gap characteristics
         self.HO = None
@@ -274,7 +277,7 @@ class BandStructure:
     def plot_band_structure(self, save_pdf=True):
         """
         This function plots the band structure
-        """
+    """
 
         # Start plot
         fig, ax = plt.subplots(figsize=(self.figsize*self.ratio, self.figsize))
@@ -308,11 +311,11 @@ class BandStructure:
                     )
 
         # Set energy (y) axis quantities
-        ax.set_ylim(self.ylim)
         ax.yaxis.set_major_locator(MultipleLocator(self.y_majorticks))
         ax.yaxis.set_major_formatter(self.y_major_tick_formatter)
         ax.yaxis.set_minor_locator(MultipleLocator(self.y_minorticks))
         ax.set_ylabel(self.ylabel)
+        ax.set_ylim(self.ylim)
 
         # Set high-symmetry point quantities
         ax.set_xlim((0.0, 1.0))
@@ -334,7 +337,7 @@ class BandStructure:
         lu_indices = []
 
         # Plot additions for insulating band structure
-        if (self.band_gap is not None) and (self.band_gap > 0.0):
+        if (self.band_gap is not None) and (self.band_gap > 0.05):
             # Coloured in section of gap
             ax.axhspan(self.HO, self.LU, alpha=0.3, color='green')
             # Positions of HO & LU k-points
@@ -358,28 +361,29 @@ class BandStructure:
                 lu_idx = min(lu_indices)
 
             # Double arrow indicating band gap
-            plt.arrow(
-                    lu_idx,
-                    self.HO,
-                    0.0,
-                    self.band_gap,
-                    length_includes_head=True,
-                    shape='full',
-                    color='r',
-                    head_width=0.01,
-                    head_length=0.1,
-                    )
-            plt.arrow(
-                    lu_idx,
-                    self.LU,
-                    0.0,
-                    -self.band_gap,
-                    length_includes_head=True,
-                    shape='full',
-                    color='r',
-                    head_width=0.01,
-                    head_length=0.08,
-                    )
+            if self.band_gap > 0.3:
+                plt.arrow(
+                        lu_idx,
+                        self.HO,
+                        0.0,
+                        self.band_gap,
+                        length_includes_head=True,
+                        shape='full',
+                        color='r',
+                        head_width=0.01,
+                        head_length=0.1,
+                        )
+                plt.arrow(
+                        lu_idx,
+                        self.LU,
+                        0.0,
+                        -self.band_gap,
+                        length_includes_head=True,
+                        shape='full',
+                        color='r',
+                        head_width=0.01,
+                        head_length=0.08,
+                        )
             # Positions of band gap mention
             x_bg = lu_idx + 0.04
             y_bg = 0.5 * (self.HO + self.LU)
@@ -390,6 +394,8 @@ class BandStructure:
         if save_pdf:
             fig.tight_layout()
             fig.savefig(self.Structure.xmlname.replace('xml', 'pdf'))
+            #fig.savefig("%s/%s" %
+            #            (self.thdir ,self.Structure.xmlname.replace('xml', 'pdf')))
 
         return None
 
@@ -404,7 +410,7 @@ def main():
     xmlname, kwargs = command_line_options()
 
     # Read XML data file and band structure stuff
-    BS = BandStructure(xmlname, figsize=6, ratio=0.5, ymin=-4, ymax=5)
+    BS = BandStructure(xmlname, figsize=6, ratio=0.8, ymin=-1.5, ymax=5)
     BS.plot_band_structure(save_pdf=True)
 
     return None
